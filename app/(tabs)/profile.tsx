@@ -1,11 +1,12 @@
 import { View, Text, ScrollView, Pressable, Alert, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { User, Ruler, Download, ChevronRight, Plus, Moon, Disc } from 'lucide-react-native';
+import { User, Ruler, Download, ChevronRight, Plus, Moon, Sun, Disc } from 'lucide-react-native';
 import { getWeightHistory, getLatestMeasurement, addMeasurement } from '../../src/db/queries/measurements';
 import { getAllWorkouts } from '../../src/db/queries/workouts';
 import { exportWorkouts } from '../../src/utils/export';
 import { PlateCalculatorModal } from '../../src/components/tools/PlateCalculatorModal';
+import { useThemeStore, type ThemeMode } from '../../src/store/themeStore';
 import { format } from 'date-fns';
 import { useState } from 'react';
 
@@ -57,6 +58,7 @@ export default function ProfileScreen() {
   const totalSets = allWorkouts.reduce((s, w) => s + (w.totalSets ?? 0), 0);
   const totalVolume = allWorkouts.reduce((s, w) => s + (w.totalVolume ?? 0), 0);
 
+  const { theme, setTheme } = useThemeStore();
   const [showPlateCalc, setShowPlateCalc] = useState(false);
 
   return (
@@ -185,9 +187,20 @@ export default function ProfileScreen() {
               },
               {
                 label: 'Theme',
-                value: 'Dark',
-                icon: Moon,
-                onPress: () => Alert.alert('Theme', 'Dark theme is active.'),
+                value: theme === 'dark' ? 'Dark' : theme === 'light' ? 'Light' : 'System',
+                icon: theme === 'dark' ? Moon : Sun,
+                onPress: () => {
+                  Alert.alert(
+                    'Choose Theme',
+                    'Select app appearance:',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: '🌙 Dark Mode', onPress: () => setTheme('dark') },
+                      { text: '☀️ Light Mode', onPress: () => setTheme('light') },
+                      { text: '⚙️ System Default', onPress: () => setTheme('system') },
+                    ],
+                  );
+                },
               },
               {
                 label: 'Export Data',

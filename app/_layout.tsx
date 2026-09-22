@@ -8,6 +8,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { runMigrations } from '../src/db/migrate';
 import { seedExercises } from '../src/data/seeder';
 
+import { useThemeStore } from '../src/store/themeStore';
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -20,10 +22,12 @@ const queryClient = new QueryClient({
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { theme, initTheme } = useThemeStore();
 
   useEffect(() => {
     async function init() {
       try {
+        await initTheme();
         await runMigrations();
         await seedExercises();
         setReady(true);
@@ -53,11 +57,13 @@ export default function RootLayout() {
     );
   }
 
+  const isDark = theme === 'dark';
+
   return (
     <GestureHandlerRootView className="flex-1">
       <QueryClientProvider client={queryClient}>
-        <StatusBar style="light" />
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0D0D0D' } }}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: isDark ? '#0D0D0D' : '#F8FAFC' } }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
             name="workout/active"

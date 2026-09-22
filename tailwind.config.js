@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: 'class',
   content: [
     './app/**/*.{js,jsx,ts,tsx}',
     './src/**/*.{js,jsx,ts,tsx}',
@@ -9,12 +10,12 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // GymLog design system
-        background: '#0D0D0D',
-        surface: '#1A1A1A',
-        card: '#242424',
-        border: '#2E2E2E',
-        'border-light': '#3A3A3A',
+        // GymLog design system with dynamic light/dark CSS variables
+        background: 'var(--background)',
+        surface: 'var(--surface)',
+        card: 'var(--card)',
+        border: 'var(--border)',
+        'border-light': 'var(--border-light)',
 
         // Accent - Neon Amber
         accent: '#F97316',
@@ -33,10 +34,10 @@ module.exports = {
         'pr-muted': 'rgba(245, 158, 11, 0.15)',
 
         // Text
-        'text-primary': '#FFFFFF',
-        'text-secondary': '#A1A1AA',
-        'text-tertiary': '#71717A',
-        'text-muted': '#52525B',
+        'text-primary': 'var(--text-primary)',
+        'text-secondary': 'var(--text-secondary)',
+        'text-tertiary': 'var(--text-tertiary)',
+        'text-muted': 'var(--text-muted)',
 
         // Muscle group colors
         chest: '#F97316',
@@ -52,6 +53,7 @@ module.exports = {
         sans: ['System'],
       },
       fontSize: {
+        '3xs': ['9px', '12px'],
         '2xs': ['10px', '14px'],
         xs: ['12px', '16px'],
         sm: ['14px', '20px'],
@@ -65,6 +67,7 @@ module.exports = {
         '6xl': ['60px', '68px'],
       },
       borderRadius: {
+        xs: '4px',
         sm: '6px',
         DEFAULT: '10px',
         md: '12px',

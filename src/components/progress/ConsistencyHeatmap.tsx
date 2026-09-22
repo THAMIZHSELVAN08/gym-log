@@ -12,12 +12,17 @@ import {
   endOfWeek,
 } from 'date-fns';
 
+import { useThemeStore } from '../../store/themeStore';
+
 interface ConsistencyHeatmapProps {
   workouts: Workout[];
   weeksCount?: number;
 }
 
 export function ConsistencyHeatmap({ workouts, weeksCount = 24 }: ConsistencyHeatmapProps) {
+  const { theme } = useThemeStore();
+  const isLight = theme === 'light';
+
   // Aggregate workout volume/sets by date string 'yyyy-MM-dd'
   const workoutDaysMap = useMemo(() => {
     const map = new Map<string, { count: number; volume: number; sets: number }>();
@@ -102,11 +107,11 @@ export function ConsistencyHeatmap({ workouts, weeksCount = 24 }: ConsistencyHea
   }, [workoutDaysMap, weeksCount]);
 
   const getColor = (data?: { sets: number; volume: number }) => {
-    if (!data || data.sets === 0) return '#18181B'; // zinc-900 empty
-    if (data.sets < 6) return '#7C2D12'; // mild
-    if (data.sets < 12) return '#C2410C'; // medium
-    if (data.sets < 20) return '#EA580C'; // heavy
-    return '#F97316'; // peak active
+    if (!data || data.sets === 0) return isLight ? '#E2E8F0' : '#18181B'; // empty tile
+    if (data.sets < 6) return isLight ? '#FED7AA' : '#7C2D12'; // mild
+    if (data.sets < 12) return isLight ? '#FB923C' : '#C2410C'; // medium
+    if (data.sets < 20) return isLight ? '#F97316' : '#EA580C'; // heavy
+    return '#EA580C'; // peak active
   };
 
   const dayLabels = ['M', '', 'W', '', 'F', '', 'S'];

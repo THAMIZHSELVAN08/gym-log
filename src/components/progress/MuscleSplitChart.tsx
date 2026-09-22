@@ -4,6 +4,8 @@ import Svg, { Path, G, Circle, Text as SvgText } from 'react-native-svg';
 import { PieChart, AlertCircle } from 'lucide-react-native';
 import type { MuscleVolumeStats } from '../../db/queries/workouts';
 
+import { useThemeStore } from '../../store/themeStore';
+
 interface MuscleSplitChartProps {
   stats: MuscleVolumeStats[];
 }
@@ -19,6 +21,9 @@ const MUSCLE_COLORS: Record<string, string> = {
 };
 
 export function MuscleSplitChart({ stats }: MuscleSplitChartProps) {
+  const { theme } = useThemeStore();
+  const isLight = theme === 'light';
+
   const totalVolume = stats.reduce((acc, s) => acc + s.volume, 0);
   const totalSets = stats.reduce((acc, s) => acc + s.sets, 0);
 
@@ -86,7 +91,7 @@ export function MuscleSplitChart({ stats }: MuscleSplitChartProps) {
                     cx={center}
                     cy={center}
                     r={radius}
-                    stroke="#18181B"
+                    stroke={isLight ? '#E2E8F0' : '#18181B'}
                     strokeWidth={strokeWidth}
                     fill="none"
                   />

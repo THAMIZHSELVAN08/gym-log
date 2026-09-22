@@ -6,6 +6,7 @@ import { Trophy, TrendingUp, ChevronDown, Check } from 'lucide-react-native';
 import { getExerciseProgression, type LiftProgressPoint } from '../../db/queries/workouts';
 import { getAllExercises } from '../../db/queries/exercises';
 import { getPrsForExercise } from '../../db/queries/prs';
+import { useThemeStore } from '../../store/themeStore';
 import { format, differenceInDays } from 'date-fns';
 
 interface StrengthChartProps {
@@ -13,6 +14,9 @@ interface StrengthChartProps {
 }
 
 export function StrengthChart({ initialExerciseId }: StrengthChartProps) {
+  const { theme } = useThemeStore();
+  const isLight = theme === 'light';
+
   const [metricMode, setMetricMode] = useState<'weight' | 'e1rm'>('e1rm');
   const [selectedPoint, setSelectedPoint] = useState<LiftProgressPoint | null>(null);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
@@ -181,7 +185,7 @@ export function StrengthChart({ initialExerciseId }: StrengthChartProps) {
               y1={paddingY}
               x2={svgWidth - paddingX}
               y2={paddingY}
-              stroke="#27272A"
+              stroke={isLight ? '#E2E8F0' : '#27272A'}
               strokeDasharray="4 4"
             />
             <Line
@@ -189,7 +193,7 @@ export function StrengthChart({ initialExerciseId }: StrengthChartProps) {
               y1={svgHeight / 2}
               x2={svgWidth - paddingX}
               y2={svgHeight / 2}
-              stroke="#27272A"
+              stroke={isLight ? '#E2E8F0' : '#27272A'}
               strokeDasharray="4 4"
             />
             <Line
@@ -197,7 +201,7 @@ export function StrengthChart({ initialExerciseId }: StrengthChartProps) {
               y1={svgHeight - paddingY}
               x2={svgWidth - paddingX}
               y2={svgHeight - paddingY}
-              stroke="#3F3F46"
+              stroke={isLight ? '#CBD5E1' : '#3F3F46'}
             />
 
             {/* Y Axis Labels */}
