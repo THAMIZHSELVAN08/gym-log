@@ -23,4 +23,4 @@ async function bootstrap() {
   await app.listen(port);
   console.log(`GymLog API running on port ${port}`);
 }
-bootstrap();
+void bootstrap();
