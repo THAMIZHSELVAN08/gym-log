@@ -1,0 +1,236 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── USER ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String   @default("Athlete")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workouts     Workout[]
+  routines     Routine[]
+  measurements BodyMeasurement[]
+  prs          PersonalRecord[]
+  syncEvents   SyncEvent[]
+
+  @@map("users")
+}
+
+// ─── EXERCISES ────────────────────────────────────────────────────────────────
+
+model Exercise {
+  id               String   @id @default(uuid())
+  name             String
+  primaryMuscle    String
+  secondaryMuscles String[] @default([])
+  equipment        String   @default("barbell")
+  movementType     String   @default("compound")
+  exerciseType     String   @default("weight_reps")
+  instructions     String?
+  isCustom         Boolean  @default(false)
+  userId           String?  // null = built-in
+  isArchived       Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workoutExercises WorkoutExercise[]
+  routineExercises RoutineExercise[]
+  prs              PersonalRecord[]
+  workoutSets      WorkoutSet[]
+
+  @@index([primaryMuscle])
+  @@index([name])
+  @@map("exercises")
+}
+
+// ─── ROUTINES ─────────────────────────────────────────────────────────────────
+
+model Routine {
+  id              String   @id @default(uuid())
+  userId          String
+  name            String
+  description     String?
+  colorHex        String   @default("#F97316")
+  isArchived      Boolean  @default(false)
+  lastPerformedAt DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercises RoutineExercise[]
+
+  @@index([userId])
+  @@map("routines")
+}
+
+model RoutineExercise {
+  id             String   @id @default(uuid())
+  routineId      String
+  exerciseId     String
+  position       Int      @default(0)
+  defaultSets    Int      @default(3)
+  targetRepsMin  Int?     @default(8)
+  targetRepsMax  Int?     @default(12)
+  restSeconds    Int?     @default(120)
+  supersetGroupId String?
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  routine  Routine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  exercise Exercise @relation(fields: [exerciseId], references: [id])
+
+  @@index([routineId])
+  @@map("routine_exercises")
+}
+
+// ─── WORKOUTS ─────────────────────────────────────────────────────────────────
+
+model Workout {
+  id              String    @id @default(uuid())
+  userId          String
+  routineId       String?
+  name            String
+  notes           String?
+  startedAt       DateTime
+  finishedAt      DateTime?
+  durationSeconds Int?
+  totalVolume     Float     @default(0)
+  totalSets       Int       @default(0)
+  totalReps       Int       @default(0)
+  prCount         Int       @default(0)
+  syncedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workoutExercises WorkoutExercise[]
+  workoutSets      WorkoutSet[]
+  personalRecords  PersonalRecord[]
+
+  @@index([userId])
+  @@index([startedAt])
+  @@map("workouts")
+}
+
+model WorkoutExercise {
+  id              String   @id @default(uuid())
+  workoutId       String
+  exerciseId      String
+  position        Int      @default(0)
+  supersetGroupId String?
+  notes           String?
+  restSeconds     Int?     @default(120)
+  createdAt       DateTime @default(now())
+
+  workout  Workout    @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  exercise Exercise   @relation(fields: [exerciseId], references: [id])
+  sets     WorkoutSet[]
+
+  @@index([workoutId])
+  @@map("workout_exercises")
+}
+
+model WorkoutSet {
+  id                String    @id @default(uuid())
+  workoutExerciseId String
+  exerciseId        String
+  workoutId         String
+  position          Int       @default(0)
+  setType           String    @default("normal")
+  weight            Float?
+  reps              Int?
+  durationSeconds   Int?
+  assistanceWeight  Float?
+  rpe               Float?
+  rir               Int?
+  isCompleted       Boolean   @default(false)
+  isPr              Boolean   @default(false)
+  notes             String?
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  workoutExercise WorkoutExercise @relation(fields: [workoutExerciseId], references: [id], onDelete: Cascade)
+  exercise        Exercise        @relation(fields: [exerciseId], references: [id])
+  workout         Workout         @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  personalRecords PersonalRecord[]
+
+  @@index([workoutId])
+  @@index([exerciseId])
+  @@map("workout_sets")
+}
+
+// ─── PERSONAL RECORDS ─────────────────────────────────────────────────────────
+
+model PersonalRecord {
+  id           String   @id @default(uuid())
+  userId       String
+  exerciseId   String
+  workoutId    String
+  workoutSetId String
+  prType       String
+  weight       Float?
+  reps         Int?
+  estimated1rm Float?
+  volume       Float?
+  achievedAt   DateTime
+  createdAt    DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercise   Exercise   @relation(fields: [exerciseId], references: [id])
+  workout    Workout    @relation(fields: [workoutId], references: [id])
+  workoutSet WorkoutSet @relation(fields: [workoutSetId], references: [id])
+
+  @@index([userId, exerciseId])
+  @@index([prType])
+  @@map("personal_records")
+}
+
+// ─── BODY MEASUREMENTS ────────────────────────────────────────────────────────
+
+model BodyMeasurement {
+  id          String   @id @default(uuid())
+  userId      String
+  type        String
+  value       Float
+  unit        String   @default("kg")
+  notes       String?
+  measuredAt  DateTime
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@map("body_measurements")
+}
+
+// ─── SYNC EVENTS ──────────────────────────────────────────────────────────────
+
+model SyncEvent {
+  id         String    @id @default(uuid())
+  userId     String
+  entityType String
+  entityId   String
+  operation  String
+  payload    Json?
+  syncedAt   DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, entityType])
+  @@map("sync_events")
+}

@@ -1,0 +1,104 @@
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    './app/**/*.{js,jsx,ts,tsx}',
+    './src/**/*.{js,jsx,ts,tsx}',
+    './components/**/*.{js,jsx,ts,tsx}',
+  ],
+  presets: [require('nativewind/preset')],
+  theme: {
+    extend: {
+      colors: {
+        // GymLog design system
+        background: '#0D0D0D',
+        surface: '#1A1A1A',
+        card: '#242424',
+        border: '#2E2E2E',
+        'border-light': '#3A3A3A',
+
+        // Accent - Neon Amber
+        accent: '#F97316',
+        'accent-light': '#FB923C',
+        'accent-dark': '#EA580C',
+        'accent-muted': 'rgba(249, 115, 22, 0.15)',
+
+        // Status
+        success: '#22C55E',
+        'success-muted': 'rgba(34, 197, 94, 0.15)',
+        warning: '#EAB308',
+        'warning-muted': 'rgba(234, 179, 8, 0.15)',
+        error: '#EF4444',
+        'error-muted': 'rgba(239, 68, 68, 0.15)',
+        pr: '#F59E0B',
+        'pr-muted': 'rgba(245, 158, 11, 0.15)',
+
+        // Text
+        'text-primary': '#FFFFFF',
+        'text-secondary': '#A1A1AA',
+        'text-tertiary': '#71717A',
+        'text-muted': '#52525B',
+
+        // Muscle group colors
+        chest: '#F97316',
+        back: '#3B82F6',
+        shoulders: '#8B5CF6',
+        biceps: '#06B6D4',
+        triceps: '#10B981',
+        legs: '#F59E0B',
+        core: '#EC4899',
+        glutes: '#84CC16',
+      },
+      fontFamily: {
+        sans: ['System'],
+      },
+      fontSize: {
+        '2xs': ['10px', '14px'],
+        xs: ['12px', '16px'],
+        sm: ['14px', '20px'],
+        base: ['16px', '24px'],
+        lg: ['18px', '26px'],
+        xl: ['20px', '28px'],
+        '2xl': ['24px', '32px'],
+        '3xl': ['30px', '38px'],
+        '4xl': ['36px', '44px'],
+        '5xl': ['48px', '56px'],
+        '6xl': ['60px', '68px'],
+      },
+      borderRadius: {
+        sm: '6px',
+        DEFAULT: '10px',
+        md: '12px',
+        lg: '16px',
+        xl: '20px',
+        '2xl': '24px',
+        '3xl': '32px',
+        full: '9999px',
+      },
+      spacing: {
+        0.5: '2px',
+        1: '4px',
+        1.5: '6px',
+        2: '8px',
+        2.5: '10px',
+        3: '12px',
+        3.5: '14px',
+        4: '16px',
+        5: '20px',
+        6: '24px',
+        7: '28px',
+        8: '32px',
+        9: '36px',
+        10: '40px',
+        11: '44px',
+        12: '48px',
+        14: '56px',
+        16: '64px',
+        20: '80px',
+        24: '96px',
+        28: '112px',
+        32: '128px',
+      },
+    },
+  },
+  plugins: [],
+};
