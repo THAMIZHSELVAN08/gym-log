@@ -20,11 +20,22 @@ export async function getLatestPrForExercise(
   exerciseId: string,
   prType: PrType,
 ): Promise<PersonalRecord | null> {
+  let orderColumn = desc(personalRecords.achievedAt);
+  if (prType === 'max_weight') {
+    orderColumn = desc(personalRecords.weight);
+  } else if (prType === 'estimated_1rm') {
+    orderColumn = desc(personalRecords.estimated1rm);
+  } else if (prType === 'best_set_volume' || prType === 'best_volume') {
+    orderColumn = desc(personalRecords.volume);
+  } else if (prType === 'max_reps') {
+    orderColumn = desc(personalRecords.reps);
+  }
+
   const result = await db
     .select()
     .from(personalRecords)
     .where(and(eq(personalRecords.exerciseId, exerciseId), eq(personalRecords.prType, prType)))
-    .orderBy(desc(personalRecords.achievedAt))
+    .orderBy(orderColumn)
     .limit(1);
   return result[0] ?? null;
 }

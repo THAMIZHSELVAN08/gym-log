@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Search, X, ChevronLeft, Plus } from 'lucide-react-native';
 import { getAllExercises } from '../../src/db/queries/exercises';
 import { useWorkoutStore } from '../../src/store/workoutStore';
+import { useRoutineFormStore } from '../../src/store/routineFormStore';
 import type { Exercise } from '../../src/db/schema';
 
 const MUSCLE_COLORS: Record<string, string> = {
@@ -49,8 +50,9 @@ function groupByMuscle(exercises: Exercise[]): { title: string; data: Exercise[]
 }
 
 export default function ExercisePickerScreen() {
-  const params = useLocalSearchParams<{ mode?: string }>();
-  const store = useWorkoutStore();
+  const params = useLocalSearchParams<{ mode?: string; replaceWorkoutExerciseId?: string }>();
+  const workoutStore = useWorkoutStore();
+  const routineFormStore = useRoutineFormStore();
   const [search, setSearch] = useState('');
 
   const { data: exercises = [] } = useQuery({
@@ -74,9 +76,31 @@ export default function ExercisePickerScreen() {
   }, [filtered, search]);
 
   const handleSelect = async (exercise: Exercise) => {
-    if (params.mode !== 'routine') {
+    if (params.replaceWorkoutExerciseId) {
+      // Replace existing exercise in active workout
+      await workoutStore.replaceExercise(params.replaceWorkoutExerciseId, {
+        id: exercise.id,
+        name: exercise.name,
+        primaryMuscle: exercise.primaryMuscle,
+        equipment: exercise.equipment,
+        exerciseType: exercise.exerciseType,
+        pinnedNote: exercise.pinnedNote,
+      });
+      router.back();
+    } else if (params.mode === 'routine') {
+      routineFormStore.addExercise({
+        id: exercise.id,
+        name: exercise.name,
+        primaryMuscle: exercise.primaryMuscle,
+        defaultSets: 3,
+        targetRepsMin: 8,
+        targetRepsMax: 12,
+        restSeconds: 120,
+      });
+      router.back();
+    } else {
       // Add to active workout
-      await store.addExercise({
+      await workoutStore.addExercise({
         exerciseId: exercise.id,
         exerciseName: exercise.name,
         primaryMuscle: exercise.primaryMuscle,
@@ -84,10 +108,8 @@ export default function ExercisePickerScreen() {
         exerciseType: exercise.exerciseType,
         defaultSets: 3,
         restSeconds: 120,
+        pinnedNote: exercise.pinnedNote,
       });
-      router.back();
-    } else {
-      // Return to routine create with selected exercise data
       router.back();
     }
   };

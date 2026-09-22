@@ -18,6 +18,7 @@ export async function runMigrations(): Promise<void> {
       movement_type TEXT NOT NULL DEFAULT 'compound',
       exercise_type TEXT NOT NULL DEFAULT 'weight_reps',
       instructions TEXT,
+      pinned_note TEXT,
       is_custom INTEGER NOT NULL DEFAULT 0,
       is_archived INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -159,4 +160,11 @@ export async function runMigrations(): Promise<void> {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  // Migration step: ensure pinned_note exists in exercises
+  try {
+    await sqlite.execAsync('ALTER TABLE exercises ADD COLUMN pinned_note TEXT;');
+  } catch {
+    // Column already exists
+  }
 }

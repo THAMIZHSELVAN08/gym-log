@@ -1,7 +1,7 @@
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { View, Text, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Trophy, Clock, Dumbbell, Zap, CheckCircle, Home } from 'lucide-react-native';
+import { Trophy } from 'lucide-react-native';
 import { formatDuration } from '../../src/utils/calculations';
 
 export default function WorkoutSummaryScreen() {
@@ -17,80 +17,67 @@ export default function WorkoutSummaryScreen() {
   const duration = parseInt(params.duration ?? '0', 10);
   const volume = parseFloat(params.volume ?? '0');
   const sets = parseInt(params.sets ?? '0', 10);
-  const reps = parseInt(params.reps ?? '0', 10);
   const prCount = parseInt(params.prs ?? '0', 10);
-
-  const stats = [
-    { icon: Clock, label: 'Duration', value: formatDuration(duration), color: '#F97316' },
-    { icon: Dumbbell, label: 'Sets', value: sets.toString(), color: '#3B82F6' },
-    { icon: Zap, label: 'Reps', value: reps.toString(), color: '#8B5CF6' },
-    {
-      icon: Dumbbell,
-      label: 'Volume',
-      value: volume >= 1000 ? `${(volume / 1000).toFixed(1)}t` : `${Math.round(volume)}kg`,
-      color: '#22C55E',
-    },
-  ];
 
   return (
     <SafeAreaView className="flex-1 bg-background">
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 48, paddingTop: 24 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Celebration header */}
-        <View className="items-center mb-8">
-          <View className="w-20 h-20 rounded-full bg-accent/20 border-2 border-accent items-center justify-center mb-4">
-            <CheckCircle size={40} color="#F97316" />
+      <View className="flex-1 justify-center px-6">
+        {/* Title */}
+        <Text className="text-text-tertiary text-xs font-semibold uppercase tracking-widest mb-2 text-center">
+          Workout Complete
+        </Text>
+        <Text className="text-text-primary text-3xl font-bold text-center mb-8">
+          Nice work 💪
+        </Text>
+
+        {/* 3 primary stats — horizontal */}
+        <View className="flex-row justify-center gap-8 mb-8">
+          <View className="items-center">
+            <Text className="text-text-primary text-2xl font-bold">{formatDuration(duration)}</Text>
+            <Text className="text-text-tertiary text-xs mt-0.5">Duration</Text>
           </View>
-          <Text className="text-text-primary text-3xl font-bold text-center">Workout Complete!</Text>
-          <Text className="text-text-tertiary text-sm mt-2 text-center">Great session 💪</Text>
+          <View className="w-px bg-border" />
+          <View className="items-center">
+            <Text className="text-text-primary text-2xl font-bold">{sets}</Text>
+            <Text className="text-text-tertiary text-xs mt-0.5">Sets</Text>
+          </View>
+          <View className="w-px bg-border" />
+          <View className="items-center">
+            <Text className="text-text-primary text-2xl font-bold">
+              {volume >= 1000 ? `${(volume / 1000).toFixed(1)}t` : `${Math.round(volume)}kg`}
+            </Text>
+            <Text className="text-text-tertiary text-xs mt-0.5">Volume</Text>
+          </View>
         </View>
 
-        {/* PR Banner */}
+        {/* PR banner — only if earned */}
         {prCount > 0 && (
-          <View className="bg-pr/15 border border-pr/30 rounded-2xl px-5 py-4 mb-5 flex-row items-center gap-3">
-            <Trophy size={28} color="#F59E0B" />
-            <View>
-              <Text className="text-pr font-bold text-lg">
-                {prCount} Personal Record{prCount > 1 ? 's' : ''}!
-              </Text>
-              <Text className="text-text-secondary text-xs">New all-time bests achieved</Text>
-            </View>
+          <View className="bg-amber-500/10 border border-amber-500/25 rounded-2xl px-5 py-4 mb-8 flex-row items-center gap-3">
+            <Trophy size={22} color="#F59E0B" />
+            <Text className="text-amber-500 font-bold text-base">
+              {prCount} Personal Record{prCount > 1 ? 's' : ''}
+            </Text>
           </View>
         )}
-
-        {/* Stats grid */}
-        <View className="flex-row flex-wrap gap-3 mb-6">
-          {stats.map((stat) => (
-            <View key={stat.label} className="flex-1 min-w-[40%] bg-card border border-border rounded-2xl p-4">
-              <stat.icon size={20} color={stat.color} />
-              <Text className="text-text-primary text-2xl font-bold mt-2">{stat.value}</Text>
-              <Text className="text-text-tertiary text-xs mt-0.5">{stat.label}</Text>
-            </View>
-          ))}
-        </View>
 
         {/* Actions */}
         <View className="gap-3">
           {params.workoutId && (
             <Pressable
               onPress={() => router.replace(`/workout/${params.workoutId}`)}
-              className="bg-card border border-border rounded-2xl py-4 items-center active:opacity-80"
+              className="border border-border rounded-2xl py-4 items-center active:opacity-75"
             >
-              <Text className="text-text-primary font-semibold">View Workout Details</Text>
+              <Text className="text-text-secondary font-semibold">View Breakdown</Text>
             </Pressable>
           )}
           <Pressable
             onPress={() => router.replace('/(tabs)')}
-            className="bg-accent rounded-2xl py-4 flex-row items-center justify-center gap-2 active:opacity-85"
+            className="bg-accent rounded-2xl py-4 items-center active:opacity-85"
           >
-            <Home size={18} color="white" />
-            <Text className="text-white font-bold text-base">Back to Home</Text>
+            <Text className="text-white font-bold text-base">Done</Text>
           </Pressable>
         </View>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }

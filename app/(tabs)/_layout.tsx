@@ -18,17 +18,19 @@ function CustomTabBar({ state, navigation }: CustomTabBarProps) {
 
   return (
     <View className="bg-surface border-t border-border">
-      {/* Active workout banner */}
+      {/* Active workout banner — compact single-line */}
       {isActive && (
         <Pressable
           onPress={() => router.push('/workout/active')}
-          className="bg-accent mx-3 mb-1 mt-2 rounded-xl px-4 py-2.5 flex-row items-center justify-between active:opacity-80"
+          className="bg-accent mx-3 mb-1 mt-1.5 rounded-lg px-3.5 py-2 flex-row items-center justify-between active:opacity-85"
         >
-          <View className="flex-row items-center gap-2">
-            <View className="w-2 h-2 rounded-full bg-white opacity-80" />
-            <Text className="text-white font-semibold text-sm">Workout in progress</Text>
+          <View className="flex-row items-center gap-2 flex-1">
+            <View className="w-2 h-2 rounded-full bg-white/80" />
+            <Text className="text-white font-semibold text-sm flex-1" numberOfLines={1}>
+              {useWorkoutStore.getState().workoutName || 'Workout'}
+            </Text>
           </View>
-          <Text className="text-white/80 text-xs">Tap to return →</Text>
+          <Text className="text-white font-bold text-xs ml-2">Resume →</Text>
         </Pressable>
       )}
 

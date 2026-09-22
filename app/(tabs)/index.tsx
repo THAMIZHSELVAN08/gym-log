@@ -1,163 +1,74 @@
-import { ScrollView, View, Text, Pressable } from 'react-native';
+import { ScrollView, View, Text, Pressable, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Play,
   Plus,
-  Dumbbell,
+  RotateCcw,
+  ChevronRight,
   Trophy,
   Flame,
-  ChevronRight,
-  BarChart3,
-  RotateCcw,
+  Dumbbell,
   Clock,
-  Layers,
-  Sparkles,
   TrendingUp,
-  ShieldCheck,
   Zap,
-  Activity,
 } from 'lucide-react-native';
 import {
   getRecentWorkouts,
   getWorkoutsInRange,
-  getLastWorkoutMuscles,
-  getMusclesRecovery,
   getStreakStats,
 } from '../../src/db/queries/workouts';
-import { getLatestMeasurement, getWeightHistory } from '../../src/db/queries/measurements';
 import { getRecentPrs } from '../../src/db/queries/prs';
 import { getAllRoutines } from '../../src/db/queries/routines';
 import { formatDuration } from '../../src/utils/calculations';
-import { format, startOfWeek, endOfWeek, isToday, isYesterday } from 'date-fns';
+import { isToday, isYesterday, startOfWeek, endOfWeek, eachDayOfInterval, format, isSameDay } from 'date-fns';
 import { useWorkoutStore } from '../../src/store/workoutStore';
+import { useState, useMemo } from 'react';
 
 function formatWorkoutDate(dateStr: string): string {
   const d = new Date(dateStr);
   if (isToday(d)) return 'Today';
   if (isYesterday(d)) return 'Yesterday';
-  return format(d, 'MMM d');
+  const diff = Math.round((Date.now() - d.getTime()) / 86400000);
+  if (diff < 7) return `${diff} days ago`;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-const MOTIVATIONAL_QUOTES = [
-  "Thamizh, the barbell never lies — 1% better every single day.",
-  "Heavy weights, quiet mind. Lock in today, Thamizh.",
-  "No bad workouts, Thamizh. Showing up is already half the battle.",
-  "Progress isn't given, Thamizh. It's earned set by set.",
-  "Discipline beats motivation every single time. Let's work, Thamizh.",
-  "Today's soreness is tomorrow's strength. Keep building, Thamizh.",
-  "Stay hungry, stay consistent. Greatness is in the reps, Thamizh.",
-  "The only bad workout is the one that didn't happen. Let's get it, Thamizh!",
-];
-
-function getDailyQuote(): string {
-  const dayOfYear = Math.floor(
-    (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000
-  );
-  return MOTIVATIONAL_QUOTES[dayOfYear % MOTIVATIONAL_QUOTES.length]!;
-}
-
-function getSmartGreeting(
-  streak: number,
-  daysSinceLast: number | null,
-  hasTrainedToday: boolean,
-  hasWorkouts: boolean
-): { title: string; subtitle: string; timeTag: string } {
+function getTimeGreeting(): { greeting: string; emoji: string } {
   const h = new Date().getHours();
-  let timeGreeting = '';
-  let timeTag = 'Morning';
-
-  if (h >= 4 && h < 12) {
-    timeGreeting = 'Good morning, Thamizh 🌅';
-    timeTag = 'Morning Focus';
-  } else if (h >= 12 && h < 17) {
-    timeGreeting = 'Good afternoon, Thamizh ☀️';
-    timeTag = 'Afternoon Grind';
-  } else if (h >= 17 && h < 22) {
-    timeGreeting = 'Good evening, Thamizh 🌆';
-    timeTag = 'Evening Session';
-  } else {
-    timeGreeting = 'Late-night beast mode, Thamizh 🌙';
-    timeTag = 'Night Warrior';
-  }
-
-  let subtitle = '';
-  if (!hasWorkouts) {
-    subtitle = 'Welcome to GymLog! Ready for Day 1? 🚀';
-  } else if (hasTrainedToday) {
-    subtitle = 'Session logged today! Rest up and fuel the gains 🏆';
-  } else if (streak > 1) {
-    subtitle = `You're on a ${streak} day streak 🔥 — don't break the momentum!`;
-  } else if (streak === 1) {
-    subtitle = "1 day streak started 🔥 — let's keep the chain going!";
-  } else if (daysSinceLast !== null && daysSinceLast >= 2) {
-    subtitle = "Missed yesterday — perfect day to bounce back 💪";
-  } else {
-    subtitle = "Ready to crush today's session? Let's get after it ⚡";
-  }
-
-  return { title: timeGreeting, subtitle, timeTag };
-}
-
-function getStreakTheme(streak: number) {
-  if (streak >= 7) {
-    return {
-      container: 'bg-yellow-500/10 border-yellow-500/30',
-      badge: 'bg-yellow-500/20 text-yellow-500',
-      bar: '#EAB308',
-      iconColor: '#EAB308',
-      textColor: 'text-yellow-500',
-      tag: '🏆 Gold Milestone',
-    };
-  }
-  if (streak >= 4) {
-    return {
-      container: 'bg-amber-500/10 border-amber-500/30',
-      badge: 'bg-amber-500/20 text-amber-500',
-      bar: '#F59E0B',
-      iconColor: '#F59E0B',
-      textColor: 'text-amber-500',
-      tag: '🔥 On Fire',
-    };
-  }
-  return {
-    container: 'bg-accent/10 border-accent/25',
-    badge: 'bg-accent/20 text-accent',
-    bar: '#F97316',
-    iconColor: '#F97316',
-    textColor: 'text-accent',
-    tag: '⚡ Building Streak',
-  };
+  if (h >= 4 && h < 12) return { greeting: 'Good morning', emoji: '☀️' };
+  if (h >= 12 && h < 17) return { greeting: 'Good afternoon', emoji: '⚡' };
+  if (h >= 17 && h < 22) return { greeting: 'Good evening', emoji: '🔥' };
+  return { greeting: 'Late night grind', emoji: '🌙' };
 }
 
 export default function HomeScreen() {
   const isWorkoutActive = useWorkoutStore((s) => s.isActive);
   const activeWorkoutName = useWorkoutStore((s) => s.workoutName);
+  const qc = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['recent-workouts'] }),
+      qc.invalidateQueries({ queryKey: ['recent-prs'] }),
+      qc.invalidateQueries({ queryKey: ['routines'] }),
+      qc.invalidateQueries({ queryKey: ['week-workouts'] }),
+      qc.invalidateQueries({ queryKey: ['streak-stats'] }),
+    ]);
+    setRefreshing(false);
+  };
 
   const { data: recentWorkouts = [] } = useQuery({
     queryKey: ['recent-workouts'],
     queryFn: () => getRecentWorkouts(5),
   });
 
-  const { data: streakStats } = useQuery({
-    queryKey: ['streak-stats'],
-    queryFn: getStreakStats,
-  });
-
   const { data: recentPrs = [] } = useQuery({
     queryKey: ['recent-prs'],
-    queryFn: () => getRecentPrs(3),
-  });
-
-  const { data: bodyWeight } = useQuery({
-    queryKey: ['body-weight'],
-    queryFn: () => getLatestMeasurement('weight'),
-  });
-
-  const { data: weightHistory = [] } = useQuery({
-    queryKey: ['weight-history'],
-    queryFn: () => getWeightHistory(7),
+    queryFn: () => getRecentPrs(1),
   });
 
   const { data: routines = [] } = useQuery({
@@ -165,9 +76,9 @@ export default function HomeScreen() {
     queryFn: getAllRoutines,
   });
 
-  const { data: recoveryList = [] } = useQuery({
-    queryKey: ['muscles-recovery'],
-    queryFn: getMusclesRecovery,
+  const { data: streakStats } = useQuery({
+    queryKey: ['streak-stats'],
+    queryFn: getStreakStats,
   });
 
   const { data: weekWorkouts = [] } = useQuery({
@@ -180,77 +91,32 @@ export default function HomeScreen() {
     },
   });
 
-  const lastWorkout = recentWorkouts[0];
-
-  const { data: lastWorkoutMuscles = [] } = useQuery({
-    queryKey: ['last-workout-muscles', lastWorkout?.id],
-    queryFn: () => (lastWorkout ? getLastWorkoutMuscles(lastWorkout.id) : Promise.resolve([])),
-    enabled: !!lastWorkout,
-  });
-
-  // Week metrics
-  const weekVolume = weekWorkouts.reduce((sum, w) => sum + (w.totalVolume ?? 0), 0);
-  const weekSets = weekWorkouts.reduce((sum, w) => sum + (w.totalSets ?? 0), 0);
-  const weekDurations = weekWorkouts.map((w) => w.durationSeconds ?? 0).filter((d) => d > 0);
-  const weekAvgDuration =
-    weekDurations.length > 0
-      ? Math.round(weekDurations.reduce((a, b) => a + b, 0) / weekDurations.length)
-      : 0;
-
-  // Streak values
+  const lastWorkout = recentWorkouts[0] ?? null;
+  const latestPr = recentPrs[0] ?? null;
   const currentStreak = streakStats?.currentStreak ?? 0;
-  const bestStreak = streakStats?.bestStreak ?? currentStreak;
-  const daysSinceLast = streakStats?.daysSinceLastWorkout ?? null;
-  const hasTrainedToday = streakStats?.hasTrainedToday ?? false;
 
-  const greeting = getSmartGreeting(
-    currentStreak,
-    daysSinceLast,
-    hasTrainedToday,
-    recentWorkouts.length > 0
-  );
-  const streakTheme = getStreakTheme(currentStreak);
-  const streakProgress = Math.min(100, Math.round((currentStreak / Math.max(bestStreak, 1)) * 100));
+  // Compute days of the current week (Mon-Sun)
+  const weekDays = useMemo(() => {
+    const now = new Date();
+    const start = startOfWeek(now, { weekStartsOn: 1 });
+    const end = endOfWeek(now, { weekStartsOn: 1 });
+    const days = eachDayOfInterval({ start, end });
 
-  // Up Next muscle suggestion
-  const upNextSuggestion = (() => {
-    if (recoveryList.length === 0) return null;
-    const sorted = [...recoveryList].sort((a, b) => {
-      if (a.daysAgo === null && b.daysAgo === null) return 0;
-      if (a.daysAgo === null) return -1;
-      if (b.daysAgo === null) return 1;
-      return b.daysAgo - a.daysAgo;
+    return days.map((day) => {
+      const hasWorkout = weekWorkouts.some((w) => isSameDay(new Date(w.startedAt), day));
+      const isCurrentDay = isSameDay(day, now);
+      return {
+        label: format(day, 'EEEEE'), // M, T, W, T, F, S, S
+        dayNumber: format(day, 'd'),
+        hasWorkout,
+        isCurrentDay,
+      };
     });
-    const target = sorted[0];
-    if (!target) return null;
+  }, [weekWorkouts]);
 
-    const name = target.muscle.charAt(0).toUpperCase() + target.muscle.slice(1);
-    if (target.daysAgo === null) {
-      return {
-        muscle: name,
-        message: `Haven't logged ${name} yet — time to attack it!`,
-        tag: 'Fresh',
-      };
-    }
-    if (target.daysAgo >= 4) {
-      return {
-        muscle: name,
-        message: `Haven't trained ${name} in ${target.daysAgo} days — fully recovered!`,
-        tag: `${target.daysAgo}d Rested`,
-      };
-    }
-    return {
-      muscle: name,
-      message: `${name} is rested and ready for progressive overload.`,
-      tag: 'Ready',
-    };
-  })();
-
-  // Weight sparkline delta
-  const weightDelta =
-    weightHistory.length >= 2 && weightHistory[0] && weightHistory[1]
-      ? Math.round((weightHistory[0].value - weightHistory[1].value) * 10) / 10
-      : null;
+  const handleStartRoutine = (routineId: string, routineName: string) => {
+    router.push(`/workout/active?routineId=${routineId}&routineName=${encodeURIComponent(routineName)}`);
+  };
 
   const handleStartEmpty = () => {
     router.push('/workout/active?empty=1');
@@ -258,14 +124,10 @@ export default function HomeScreen() {
 
   const handleRepeatLast = () => {
     if (!lastWorkout) return;
-    router.push(
-      `/workout/active?repeatWorkoutId=${lastWorkout.id}&routineName=${encodeURIComponent(lastWorkout.name)}`
-    );
+    router.push(`/workout/active?repeatWorkoutId=${lastWorkout.id}&routineName=${encodeURIComponent(lastWorkout.name)}`);
   };
 
-  const handleStartRoutine = (routineId: string, routineName: string) => {
-    router.push(`/workout/active?routineId=${routineId}&routineName=${encodeURIComponent(routineName)}`);
-  };
+  const { greeting, emoji } = getTimeGreeting();
 
   return (
     <SafeAreaView className="flex-1 bg-background">
@@ -273,167 +135,173 @@ export default function HomeScreen() {
         className="flex-1"
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#F97316" />
+        }
       >
-        {/* ─── 1. Smart Greeting Header ────────────────────────────────────────── */}
-        <View className="px-5 pt-4 pb-2">
-          <View className="flex-row items-center justify-between mb-1">
-            <View className="flex-row items-center gap-1.5">
-              <Zap size={14} color="#F97316" />
-              <Text className="text-accent text-xs font-bold uppercase tracking-wider">
-                {greeting.timeTag}
-              </Text>
-            </View>
-            <View className="bg-surface border border-border px-2.5 py-0.5 rounded-full">
-              <Text className="text-text-muted text-2xs font-semibold">Thamizh</Text>
-            </View>
+        {/* ─── Hero Header ─────────────────────────────────────────────── */}
+        <View className="px-5 pt-5 pb-3 flex-row items-center justify-between">
+          <View>
+            <Text className="text-text-tertiary text-xs font-semibold uppercase tracking-wider">
+              {greeting} {emoji}
+            </Text>
+            <Text className="text-text-primary text-2xl font-bold tracking-tight mt-0.5">
+              GymLog
+            </Text>
           </View>
-          <Text className="text-text-primary text-2xl font-bold tracking-tight">
-            {greeting.title}
-          </Text>
-          <Text className="text-text-secondary text-sm mt-1 leading-snug">
-            {greeting.subtitle}
-          </Text>
+
+          {/* Streak pill */}
+          <Pressable
+            onPress={() => router.push('/(tabs)/progress')}
+            style={({ pressed }) => [{ opacity: pressed ? 0.75 : 1 }]}
+            className="flex-row items-center gap-1.5 bg-card border border-amber-500/30 px-3.5 py-1.5 rounded-full"
+          >
+            <Flame size={15} color="#F97316" fill={currentStreak > 0 ? '#F97316' : 'transparent'} />
+            <Text className="text-text-primary font-bold text-xs">
+              {currentStreak > 0 ? `${currentStreak}d Streak` : 'Start Streak'}
+            </Text>
+          </Pressable>
         </View>
 
-        {/* ─── 2. Active Workout Banner ───────────────────────────────────────── */}
+        {/* ─── Weekly Momentum Tracker ─────────────────────────────────── */}
+        <View className="mx-5 mb-5 bg-card border border-border rounded-2xl p-4">
+          <View className="flex-row items-center justify-between mb-3">
+            <Text className="text-text-secondary text-xs font-semibold uppercase tracking-wider">
+              Weekly Momentum
+            </Text>
+            <Text className="text-accent text-xs font-bold">
+              {weekWorkouts.length} Session{weekWorkouts.length !== 1 ? 's' : ''}
+            </Text>
+          </View>
+
+          <View className="flex-row justify-between items-center">
+            {weekDays.map((item, idx) => (
+              <View key={idx} className="items-center gap-1.5">
+                <Text className="text-text-muted text-2xs font-semibold uppercase">
+                  {item.label}
+                </Text>
+                <View
+                  className={`w-9 h-9 rounded-full items-center justify-center border ${
+                    item.hasWorkout
+                      ? 'bg-accent border-accent shadow-sm'
+                      : item.isCurrentDay
+                      ? 'bg-surface border-accent/60'
+                      : 'bg-surface border-border'
+                  }`}
+                >
+                  {item.hasWorkout ? (
+                    <Zap size={14} color="#FFFFFF" fill="#FFFFFF" />
+                  ) : (
+                    <Text
+                      className={`text-xs font-bold ${
+                        item.isCurrentDay ? 'text-accent' : 'text-text-tertiary'
+                      }`}
+                    >
+                      {item.dayNumber}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* ─── Active Workout Live Card ────────────────────────────────── */}
         {isWorkoutActive && (
           <Pressable
             onPress={() => router.push('/workout/active')}
-            className="mx-4 mb-4 mt-2 bg-accent rounded-2xl px-5 py-4 flex-row items-center justify-between active:opacity-90 shadow-md shadow-accent/20"
+            style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}
+            className="mx-5 mb-5 bg-accent rounded-2xl p-5 flex-row items-center justify-between shadow-lg"
           >
             <View className="flex-1 mr-3">
-              <View className="flex-row items-center gap-2 mb-0.5">
+              <View className="flex-row items-center gap-2 mb-1">
                 <View className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
-                <Text className="text-white text-xs font-bold uppercase tracking-widest">
-                  Active Workout In Progress
+                <Text className="text-white/80 text-xs font-bold uppercase tracking-wider">
+                  Workout In Progress
                 </Text>
               </View>
-              <Text className="text-white text-lg font-bold" numberOfLines={1}>
-                {activeWorkoutName || 'Workout'}
+              <Text className="text-white font-bold text-xl" numberOfLines={1}>
+                {activeWorkoutName || 'Active Workout'}
               </Text>
             </View>
-            <View className="bg-white/20 rounded-xl px-3 py-1.5 flex-row items-center gap-1">
-              <Text className="text-white text-xs font-bold">Resume</Text>
-              <ChevronRight size={16} color="white" />
+            <View className="bg-white px-4 py-2 rounded-xl">
+              <Text className="text-accent font-bold text-sm">Resume →</Text>
             </View>
           </Pressable>
         )}
 
-        {/* ─── 3. Rich Streak Banner ──────────────────────────────────────────── */}
-        {currentStreak > 0 && (
-          <View className={`mx-4 mb-4 mt-1 border rounded-2xl p-4 ${streakTheme.container}`}>
-            <View className="flex-row items-center justify-between mb-2">
-              <View className="flex-row items-center gap-2">
-                <Flame size={20} color={streakTheme.iconColor} />
-                <Text className={`font-bold text-base ${streakTheme.textColor}`}>
-                  {currentStreak} Day Streak 🔥
-                </Text>
-              </View>
-              <View className="bg-surface/80 border border-border px-2.5 py-1 rounded-lg">
-                <Text className="text-text-secondary text-xs font-semibold">
-                  Best: <Text className="text-text-primary font-bold">{bestStreak}d</Text>
-                </Text>
-              </View>
-            </View>
-
-            {/* Progress bar to best streak */}
-            <View className="h-2 bg-surface rounded-full overflow-hidden mb-2">
-              <View
-                className="h-full rounded-full"
-                style={{ width: `${Math.max(8, streakProgress)}%`, backgroundColor: streakTheme.bar }}
-              />
-            </View>
-
-            <View className="flex-row items-center justify-between">
-              <Text className="text-text-tertiary text-2xs font-medium">
-                {currentStreak >= bestStreak
-                  ? '👑 All-time record streak! Keep dominating.'
-                  : `${bestStreak - currentStreak} days to match your all-time record`}
-              </Text>
-              <View className="flex-row items-center gap-1">
-                <ShieldCheck size={12} color="#71717A" />
-                <Text className="text-text-muted text-2xs">Streak Insurance 🛡️</Text>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* ─── 4. Quick Start Improvements ────────────────────────────────────── */}
+        {/* ─── Quick Start Hub ─────────────────────────────────────────── */}
         {!isWorkoutActive && (
-          <View className="px-4 mb-5 mt-1">
-            <Text className="text-text-secondary text-xs font-semibold uppercase tracking-widest mb-3">
-              Quick Start
-            </Text>
+          <View className="mb-5">
+            <View className="px-5 mb-2.5 flex-row items-center justify-between">
+              <Text className="text-text-secondary text-xs font-semibold uppercase tracking-wider">
+                Quick Start
+              </Text>
+              <Pressable
+                onPress={() => router.push('/(tabs)/workouts')}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Text className="text-accent text-xs font-semibold">All Routines →</Text>
+              </Pressable>
+            </View>
 
-            <View className="flex-row gap-3 mb-3">
-              {/* Empty Workout */}
+            {/* Start Buttons */}
+            <View className="px-5 flex-row gap-3 mb-3">
               <Pressable
                 onPress={handleStartEmpty}
-                className="flex-1 bg-card border border-border rounded-2xl p-4 active:opacity-80 justify-between"
+                style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}
+                className="flex-1 bg-card border border-border rounded-2xl p-4 flex-row items-center gap-3"
               >
-                <View className="w-10 h-10 rounded-xl bg-accent/10 items-center justify-center mb-3">
+                <View className="w-10 h-10 rounded-xl bg-accent/15 items-center justify-center">
                   <Plus size={20} color="#F97316" />
                 </View>
-                <View>
-                  <Text className="text-text-primary font-bold text-base">Empty Workout</Text>
-                  <Text className="text-text-tertiary text-xs mt-0.5">Choose as you go</Text>
+                <View className="flex-1">
+                  <Text className="text-text-primary font-bold text-base">Empty</Text>
+                  <Text className="text-text-muted text-xs">Custom log</Text>
                 </View>
               </Pressable>
 
-              {/* Repeat Last Workout */}
-              {lastWorkout ? (
+              {lastWorkout && (
                 <Pressable
                   onPress={handleRepeatLast}
-                  className="flex-1 bg-accent/10 border border-accent/25 rounded-2xl p-4 active:opacity-80 justify-between"
+                  style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}
+                  className="flex-1 bg-card border border-border rounded-2xl p-4 flex-row items-center gap-3"
                 >
-                  <View className="flex-row items-center justify-between mb-3">
-                    <View className="w-10 h-10 rounded-xl bg-accent items-center justify-center shadow-sm">
-                      <RotateCcw size={18} color="white" />
-                    </View>
-                    <View className="bg-accent/20 px-2 py-0.5 rounded-full">
-                      <Text className="text-accent text-2xs font-bold">1-TAP</Text>
-                    </View>
+                  <View className="w-10 h-10 rounded-xl bg-blue-500/15 items-center justify-center">
+                    <RotateCcw size={18} color="#3B82F6" />
                   </View>
-                  <View>
-                    <Text className="text-text-primary font-bold text-base" numberOfLines={1}>
-                      Repeat Last
-                    </Text>
-                    <Text className="text-accent text-xs font-medium mt-0.5" numberOfLines={1}>
+                  <View className="flex-1">
+                    <Text className="text-text-primary font-bold text-base">Repeat</Text>
+                    <Text className="text-text-muted text-xs" numberOfLines={1}>
                       {lastWorkout.name}
                     </Text>
-                  </View>
-                </Pressable>
-              ) : (
-                <Pressable
-                  onPress={() => router.push('/workouts')}
-                  className="flex-1 bg-card border border-border rounded-2xl p-4 active:opacity-80 justify-between"
-                >
-                  <View className="w-10 h-10 rounded-xl bg-blue-500/10 items-center justify-center mb-3">
-                    <Dumbbell size={20} color="#3B82F6" />
-                  </View>
-                  <View>
-                    <Text className="text-text-primary font-bold text-base">Templates</Text>
-                    <Text className="text-text-tertiary text-xs mt-0.5">Explore routines</Text>
                   </View>
                 </Pressable>
               )}
             </View>
 
-            {/* Routine quick chips */}
+            {/* Routine Chips Horizontal Carousel */}
             {routines.length > 0 && (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
+                contentContainerStyle={{ paddingHorizontal: 20, gap: 10 }}
               >
-                {routines.map((r) => (
+                {routines.map((routine) => (
                   <Pressable
-                    key={r.id}
-                    onPress={() => handleStartRoutine(r.id, r.name)}
-                    className="bg-card border border-border rounded-xl px-3.5 py-2.5 flex-row items-center gap-2 active:opacity-75"
+                    key={routine.id}
+                    onPress={() => handleStartRoutine(routine.id, routine.name)}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.75 : 1 }]}
+                    className="bg-card border border-border rounded-xl px-4 py-3 flex-row items-center gap-2.5"
                   >
-                    <Play size={13} color="#F97316" fill="#F97316" />
-                    <Text className="text-text-primary font-semibold text-xs">{r.name}</Text>
+                    <View
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: routine.colorHex || '#F97316' }}
+                    />
+                    <Text className="text-text-primary font-semibold text-sm">
+                      {routine.name}
+                    </Text>
+                    <Play size={12} color="#A1A1AA" fill="#A1A1AA" />
                   </Pressable>
                 ))}
               </ScrollView>
@@ -441,311 +309,109 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* ─── 5. Up Next Muscle Suggestion ───────────────────────────────────── */}
-        {upNextSuggestion && (
-          <View className="px-4 mb-5">
-            <View className="bg-card border border-border rounded-2xl p-4">
-              <View className="flex-row items-center justify-between mb-2">
-                <View className="flex-row items-center gap-2">
-                  <Activity size={16} color="#F97316" />
-                  <Text className="text-text-secondary text-xs font-semibold uppercase tracking-wider">
-                    Up Next Focus
-                  </Text>
-                </View>
-                <View className="bg-surface border border-border px-2 py-0.5 rounded-md">
-                  <Text className="text-accent text-2xs font-bold">{upNextSuggestion.tag}</Text>
-                </View>
-              </View>
-
-              <Text className="text-text-primary font-bold text-base mb-1">
-                {upNextSuggestion.muscle} Day
-              </Text>
-              <Text className="text-text-tertiary text-xs mb-3">
-                {upNextSuggestion.message}
-              </Text>
-
-              <Pressable
-                onPress={handleStartEmpty}
-                className="bg-surface border border-border rounded-xl py-2 px-3 flex-row items-center justify-between active:opacity-70"
-              >
-                <Text className="text-text-primary text-xs font-semibold">Start {upNextSuggestion.muscle} Workout</Text>
-                <ChevronRight size={14} color="#71717A" />
-              </Pressable>
-            </View>
-          </View>
-        )}
-
-        {/* ─── 6. "This Week" 4-Stat Grid (Clickable) ─────────────────────────── */}
-        <View className="px-4 mb-5">
-          <View className="flex-row items-center justify-between mb-3">
-            <Text className="text-text-secondary text-xs font-semibold uppercase tracking-widest">
-              This Week
-            </Text>
-            <Pressable onPress={() => router.push('/progress')} className="flex-row items-center gap-1">
-              <Text className="text-accent text-xs font-medium">Full Analytics</Text>
-              <ChevronRight size={14} color="#F97316" />
-            </Pressable>
-          </View>
-
-          <View className="flex-row flex-wrap gap-2.5">
-            {/* 1. Workouts */}
-            <Pressable
-              onPress={() => router.push('/progress')}
-              className="flex-1 min-w-[46%] bg-card border border-border rounded-xl p-3.5 active:opacity-80"
-            >
-              <View className="flex-row items-center justify-between mb-1.5">
-                <Flame size={16} color="#F97316" />
-                <ChevronRight size={12} color="#71717A" />
-              </View>
-              <Text className="text-text-primary text-2xl font-bold">
-                {weekWorkouts.length}<Text className="text-text-tertiary text-base font-normal">/5</Text>
-              </Text>
-              <Text className="text-text-tertiary text-xs mt-0.5">Workouts Target</Text>
-            </Pressable>
-
-            {/* 2. Volume */}
-            <Pressable
-              onPress={() => router.push('/progress')}
-              className="flex-1 min-w-[46%] bg-card border border-border rounded-xl p-3.5 active:opacity-80"
-            >
-              <View className="flex-row items-center justify-between mb-1.5">
-                <Dumbbell size={16} color="#F97316" />
-                <ChevronRight size={12} color="#71717A" />
-              </View>
-              <Text className="text-text-primary text-2xl font-bold">
-                {weekVolume > 1000 ? `${(weekVolume / 1000).toFixed(1)}t` : `${Math.round(weekVolume)}kg`}
-              </Text>
-              <Text className="text-text-tertiary text-xs mt-0.5">Total Volume</Text>
-            </Pressable>
-
-            {/* 3. Total Sets */}
-            <Pressable
-              onPress={() => router.push('/progress')}
-              className="flex-1 min-w-[46%] bg-card border border-border rounded-xl p-3.5 active:opacity-80"
-            >
-              <View className="flex-row items-center justify-between mb-1.5">
-                <Layers size={16} color="#F97316" />
-                <ChevronRight size={12} color="#71717A" />
-              </View>
-              <Text className="text-text-primary text-2xl font-bold">{weekSets}</Text>
-              <Text className="text-text-tertiary text-xs mt-0.5">Total Sets</Text>
-            </Pressable>
-
-            {/* 4. Avg Duration */}
-            <Pressable
-              onPress={() => router.push('/progress')}
-              className="flex-1 min-w-[46%] bg-card border border-border rounded-xl p-3.5 active:opacity-80"
-            >
-              <View className="flex-row items-center justify-between mb-1.5">
-                <Clock size={16} color="#F97316" />
-                <ChevronRight size={12} color="#71717A" />
-              </View>
-              <Text className="text-text-primary text-2xl font-bold">
-                {weekAvgDuration > 0 ? formatDuration(weekAvgDuration) : '—'}
-              </Text>
-              <Text className="text-text-tertiary text-xs mt-0.5">Avg Duration</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {/* ─── 7. Body Weight + Mini Sparkline ─────────────────────────────────── */}
-        {bodyWeight && (
-          <View className="px-4 mb-5">
-            <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-text-secondary text-xs font-semibold uppercase tracking-widest">
-                Body Weight
-              </Text>
-              <Pressable onPress={() => router.push('/profile')}>
-                <Text className="text-accent text-xs font-medium">Log weight</Text>
-              </Pressable>
-            </View>
-
-            <View className="bg-card border border-border rounded-2xl p-4">
-              <View className="flex-row items-end justify-between">
-                <View>
-                  <Text className="text-text-primary text-3xl font-bold">
-                    {bodyWeight.value}{' '}
-                    <Text className="text-text-tertiary text-lg font-normal">{bodyWeight.unit}</Text>
-                  </Text>
-                  <Text className="text-text-tertiary text-xs mt-1">
-                    Logged {formatWorkoutDate(bodyWeight.measuredAt)}
-                  </Text>
-                </View>
-
-                {weightDelta !== null && (
-                  <View
-                    className={`flex-row items-center gap-1 px-2.5 py-1 rounded-lg ${
-                      weightDelta <= 0 ? 'bg-emerald-500/10' : 'bg-accent/10'
-                    }`}
-                  >
-                    <TrendingUp size={12} color={weightDelta <= 0 ? '#10B981' : '#F97316'} />
-                    <Text
-                      className={`text-xs font-bold ${
-                        weightDelta <= 0 ? 'text-emerald-500' : 'text-accent'
-                      }`}
-                    >
-                      {weightDelta > 0 ? `+${weightDelta}` : `${weightDelta}`} {bodyWeight.unit}
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              {/* Mini Sparkline Bar Visualization */}
-              {weightHistory.length > 1 && (
-                <View className="mt-4 pt-3 border-t border-border/60">
-                  <View className="flex-row items-end justify-between h-8 gap-1.5 px-1">
-                    {[...weightHistory].reverse().map((entry, idx) => {
-                      const allVals = weightHistory.map((w) => w.value);
-                      const min = Math.min(...allVals);
-                      const max = Math.max(...allVals);
-                      const range = max - min || 1;
-                      const heightPercent = Math.max(25, Math.round(((entry.value - min) / range) * 100));
-                      const isLast = idx === weightHistory.length - 1;
-
-                      return (
-                        <View key={entry.id} className="flex-1 items-center justify-end h-full">
-                          <View
-                            className={`w-full rounded-sm ${isLast ? 'bg-accent' : 'bg-surface'}`}
-                            style={{ height: `${heightPercent}%` }}
-                          />
-                        </View>
-                      );
-                    })}
-                  </View>
-                  <View className="flex-row justify-between mt-1 px-1">
-                    <Text className="text-text-muted text-2xs">Earlier</Text>
-                    <Text className="text-accent text-2xs font-semibold">Latest</Text>
-                  </View>
-                </View>
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* ─── 8. Last Workout Card with Muscle Tags ───────────────────────────── */}
+        {/* ─── Last Workout Recap ──────────────────────────────────────── */}
         {lastWorkout && (
-          <View className="px-4 mb-5">
-            <Text className="text-text-secondary text-xs font-semibold uppercase tracking-widest mb-3">
-              Last Workout
+          <View className="px-5 mb-5">
+            <Text className="text-text-secondary text-xs font-semibold uppercase tracking-wider mb-2.5">
+              Recent Activity
             </Text>
             <Pressable
               onPress={() => router.push(`/workout/${lastWorkout.id}`)}
-              className="bg-card border border-border rounded-2xl p-4 active:opacity-80"
+              style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}
+              className="bg-card border border-border rounded-2xl p-4"
             >
-              <View className="flex-row items-center justify-between mb-1.5">
-                <Text className="text-text-primary font-bold text-lg">{lastWorkout.name}</Text>
-                <Text className="text-text-muted text-xs">{formatWorkoutDate(lastWorkout.startedAt)}</Text>
+              <View className="flex-row items-center justify-between mb-3">
+                <View className="flex-1 mr-2">
+                  <Text className="text-text-primary font-bold text-lg mb-0.5">
+                    {lastWorkout.name}
+                  </Text>
+                  <Text className="text-text-muted text-xs">
+                    {formatWorkoutDate(lastWorkout.startedAt)}
+                  </Text>
+                </View>
+                <ChevronRight size={18} color="#71717A" />
               </View>
 
-              {/* Muscle Group Chips */}
-              {lastWorkoutMuscles.length > 0 && (
-                <View className="flex-row items-center gap-1.5 mb-3 flex-wrap">
-                  {lastWorkoutMuscles.map((muscle) => (
-                    <View
-                      key={muscle}
-                      className="bg-surface border border-border px-2 py-0.5 rounded-md"
-                    >
-                      <Text className="text-accent text-2xs font-semibold capitalize">
-                        {muscle.replace(/_/g, ' ')}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              <View className="flex-row gap-5 pt-2 border-t border-border/50">
-                <View>
-                  <Text className="text-text-primary font-bold text-sm">{lastWorkout.totalSets}</Text>
-                  <Text className="text-text-tertiary text-2xs">Sets</Text>
-                </View>
-                <View>
-                  <Text className="text-text-primary font-bold text-sm">
-                    {Math.round(lastWorkout.totalVolume ?? 0)} kg
-                  </Text>
-                  <Text className="text-text-tertiary text-2xs">Volume</Text>
-                </View>
+              {/* Stats badges */}
+              <View className="flex-row gap-2">
                 {lastWorkout.durationSeconds ? (
-                  <View>
-                    <Text className="text-text-primary font-bold text-sm">
+                  <View className="bg-surface border border-border rounded-lg px-2.5 py-1.5 flex-row items-center gap-1.5">
+                    <Clock size={12} color="#F97316" />
+                    <Text className="text-text-secondary text-xs font-semibold">
                       {formatDuration(lastWorkout.durationSeconds)}
                     </Text>
-                    <Text className="text-text-tertiary text-2xs">Duration</Text>
                   </View>
                 ) : null}
-              </View>
 
-              <View className="flex-row items-center justify-end mt-2 pt-2 gap-1">
-                <Text className="text-accent text-xs font-semibold">View breakdown</Text>
-                <ChevronRight size={14} color="#F97316" />
+                <View className="bg-surface border border-border rounded-lg px-2.5 py-1.5 flex-row items-center gap-1.5">
+                  <Dumbbell size={12} color="#3B82F6" />
+                  <Text className="text-text-secondary text-xs font-semibold">
+                    {lastWorkout.totalSets ?? 0} sets
+                  </Text>
+                </View>
+
+                {lastWorkout.totalVolume ? (
+                  <View className="bg-surface border border-border rounded-lg px-2.5 py-1.5 flex-row items-center gap-1.5">
+                    <TrendingUp size={12} color="#10B981" />
+                    <Text className="text-text-secondary text-xs font-semibold">
+                      {lastWorkout.totalVolume >= 1000
+                        ? `${(lastWorkout.totalVolume / 1000).toFixed(1)}t`
+                        : `${Math.round(lastWorkout.totalVolume)} kg`}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             </Pressable>
           </View>
         )}
 
-        {/* ─── 9. Recent PRs ─────────────────────────────────────────────────── */}
-        {recentPrs.length > 0 && (
-          <View className="px-4 mb-5">
-            <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-text-secondary text-xs font-semibold uppercase tracking-widest">
-                Recent PRs
-              </Text>
-              <Pressable onPress={() => router.push('/progress')}>
-                <Text className="text-accent text-xs font-medium">See all</Text>
-              </Pressable>
-            </View>
-            {recentPrs.map((pr) => (
-              <View
-                key={pr.id}
-                className="bg-card border border-border rounded-xl px-4 py-3 mb-2 flex-row items-center gap-3"
-              >
-                <View className="w-8 h-8 rounded-full bg-pr/15 items-center justify-center">
-                  <Trophy size={16} color="#F59E0B" />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-text-primary text-sm font-semibold">
-                    {pr.prType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-                  </Text>
-                  <Text className="text-text-tertiary text-xs">
-                    {pr.weight ? `${pr.weight} kg` : ''}
-                    {pr.reps ? ` × ${pr.reps}` : ''}
-                  </Text>
-                </View>
-                <Text className="text-text-muted text-xs">{formatWorkoutDate(pr.achievedAt)}</Text>
+        {/* ─── Recent PR Highlight ─────────────────────────────────────── */}
+        {latestPr && (
+          <View className="px-5 mb-4">
+            <Text className="text-text-secondary text-xs font-semibold uppercase tracking-wider mb-2.5">
+              Milestone Achievement
+            </Text>
+            <Pressable
+              onPress={() => router.push('/(tabs)/progress')}
+              style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}
+              className="bg-card border border-amber-500/25 rounded-2xl p-4 flex-row items-center gap-3.5"
+            >
+              <View className="w-11 h-11 rounded-2xl bg-amber-500/15 items-center justify-center">
+                <Trophy size={22} color="#F59E0B" />
               </View>
-            ))}
+              <View className="flex-1">
+                <Text className="text-amber-500 font-bold text-xs uppercase tracking-wider">
+                  Personal Record Broken
+                </Text>
+                <Text className="text-text-primary font-bold text-base mt-0.5">
+                  {latestPr.weight ? `${latestPr.weight} kg` : ''}
+                  {latestPr.reps ? ` × ${latestPr.reps} reps` : ''}
+                </Text>
+                <Text className="text-text-muted text-xs capitalize">
+                  {latestPr.prType.replace(/_/g, ' ')}
+                </Text>
+              </View>
+              <ChevronRight size={16} color="#71717A" />
+            </Pressable>
           </View>
         )}
 
-        {/* ─── 10. Quote / Quirk of the Day ───────────────────────────────────── */}
-        <View className="px-4 mb-3">
-          <View className="bg-surface border border-border rounded-2xl p-4 flex-row items-start gap-3">
-            <Sparkles size={18} color="#F97316" className="mt-0.5" />
-            <View className="flex-1">
-              <Text className="text-text-secondary text-2xs font-bold uppercase tracking-wider mb-1">
-                Daily Motivation • Thamizh
-              </Text>
-              <Text className="text-text-primary text-xs italic leading-relaxed">
-                &ldquo;{getDailyQuote()}&rdquo;
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ─── Empty state if brand new ──────────────────────────────────────── */}
+        {/* ─── Empty state ─────────────────────────────────────────────── */}
         {recentWorkouts.length === 0 && !isWorkoutActive && (
-          <View className="px-4 items-center py-8">
-            <View className="w-20 h-20 rounded-full bg-card border border-border items-center justify-center mb-4">
-              <BarChart3 size={36} color="#F97316" />
+          <View className="px-8 items-center py-12">
+            <View className="w-16 h-16 rounded-full bg-surface border border-border items-center justify-center mb-4">
+              <Dumbbell size={28} color="#F97316" />
             </View>
             <Text className="text-text-primary text-xl font-bold text-center mb-2">
-              Welcome, Thamizh!
+              Ready for your first workout?
             </Text>
-            <Text className="text-text-tertiary text-sm text-center mb-6 max-w-xs">
-              Log your first workout to start tracking your streak, volume, and personal records.
+            <Text className="text-text-muted text-sm text-center mb-6 leading-5">
+              Log your exercises, track weights & reps, and break personal records.
             </Text>
             <Pressable
               onPress={handleStartEmpty}
-              className="bg-accent px-8 py-3.5 rounded-full active:opacity-90"
+              style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
+              className="bg-accent px-8 py-3.5 rounded-full shadow-lg"
             >
               <Text className="text-white font-bold text-base">Start First Workout</Text>
             </Pressable>

@@ -1,15 +1,16 @@
-import { db } from '../client';
+import { db, sqlite } from '../client';
 import {
   workouts,
   workoutExercises,
   workoutSets,
+  personalRecords,
   exercises,
   type Workout,
   type NewWorkout,
   type WorkoutExercise,
   type WorkoutSet,
 } from '../schema';
-import { eq, desc, and, gte, lte } from 'drizzle-orm';
+import { eq, desc, and, gte, lte, isNull, isNotNull, ne } from 'drizzle-orm';
 import { generateId } from '../../utils/id';
 
 // ─── Workout CRUD ─────────────────────────────────────────────────────────────
@@ -43,24 +44,69 @@ export async function getWorkoutById(id: string): Promise<Workout | null> {
   return result[0] ?? null;
 }
 
+export async function getActiveWorkout(): Promise<Workout | null> {
+  // Only recover workouts started in the last 24h — prevents picking up old abandoned sessions
+  const oneDayAgo = new Date(Date.now() - 86400000).toISOString();
+  const result = await db
+    .select()
+    .from(workouts)
+    .where(and(isNull(workouts.finishedAt), gte(workouts.startedAt, oneDayAgo)))
+    .orderBy(desc(workouts.startedAt))
+    .limit(1);
+  return result[0] ?? null;
+}
+
+export async function deleteWorkout(id: string): Promise<void> {
+  // Use atomic SQLite execution to guarantee complete deletion without foreign key deadlocks
+  await sqlite.execAsync(`
+    PRAGMA foreign_keys = OFF;
+    DELETE FROM personal_records WHERE workout_id = '${id}';
+    DELETE FROM workout_sets WHERE workout_id = '${id}';
+    DELETE FROM workout_exercises WHERE workout_id = '${id}';
+    DELETE FROM workouts WHERE id = '${id}';
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
 export async function getAllWorkouts(): Promise<Workout[]> {
-  return db.select().from(workouts).orderBy(desc(workouts.startedAt));
+  return db
+    .select()
+    .from(workouts)
+    .where(isNotNull(workouts.finishedAt))
+    .orderBy(desc(workouts.startedAt));
 }
 
 export async function getWorkoutsInRange(startDate: string, endDate: string): Promise<Workout[]> {
   return db
     .select()
     .from(workouts)
-    .where(and(gte(workouts.startedAt, startDate), lte(workouts.startedAt, endDate)))
+    .where(and(isNotNull(workouts.finishedAt), gte(workouts.startedAt, startDate), lte(workouts.startedAt, endDate)))
     .orderBy(desc(workouts.startedAt));
 }
 
 export async function getRecentWorkouts(limit = 10): Promise<Workout[]> {
-  return db.select().from(workouts).orderBy(desc(workouts.startedAt)).limit(limit);
+  return db
+    .select()
+    .from(workouts)
+    .where(isNotNull(workouts.finishedAt))
+    .orderBy(desc(workouts.startedAt))
+    .limit(limit);
 }
 
 export async function updateWorkout(id: string, data: Partial<Workout>): Promise<void> {
   await db.update(workouts).set({ ...data, updatedAt: new Date().toISOString() }).where(eq(workouts.id, id));
+}
+
+export async function updateWorkoutName(id: string, name: string): Promise<void> {
+  await db.update(workouts).set({ name, updatedAt: new Date().toISOString() }).where(eq(workouts.id, id));
+}
+
+export async function updateWorkoutNotes(id: string, notes: string | null): Promise<void> {
+  await db.update(workouts).set({ notes, updatedAt: new Date().toISOString() }).where(eq(workouts.id, id));
+}
+
+export async function updateWorkoutDate(id: string, startedAt: string): Promise<void> {
+  await db.update(workouts).set({ startedAt, updatedAt: new Date().toISOString() }).where(eq(workouts.id, id));
 }
 
 export async function finishWorkout(
@@ -132,6 +178,31 @@ export async function removeExerciseFromWorkout(workoutExerciseId: string): Prom
   await db.delete(workoutExercises).where(eq(workoutExercises.id, workoutExerciseId));
 }
 
+export async function updateWorkoutExerciseNotes(workoutExerciseId: string, notes: string | null): Promise<void> {
+  await db.update(workoutExercises).set({ notes }).where(eq(workoutExercises.id, workoutExerciseId));
+}
+
+export async function updateWorkoutExerciseRestSeconds(workoutExerciseId: string, restSeconds: number): Promise<void> {
+  await db.update(workoutExercises).set({ restSeconds }).where(eq(workoutExercises.id, workoutExerciseId));
+}
+
+export async function updateWorkoutExerciseSuperset(workoutExerciseId: string, supersetGroupId: string | null): Promise<void> {
+  await db.update(workoutExercises).set({ supersetGroupId }).where(eq(workoutExercises.id, workoutExerciseId));
+}
+
+export async function reorderWorkoutExercises(workoutId: string, orderedExerciseIds: string[]): Promise<void> {
+  for (let i = 0; i < orderedExerciseIds.length; i++) {
+    const weId = orderedExerciseIds[i]!;
+    await db.update(workoutExercises).set({ position: i }).where(eq(workoutExercises.id, weId));
+  }
+}
+
+export async function replaceWorkoutExercise(workoutExerciseId: string, newExerciseId: string): Promise<void> {
+  await db.update(workoutExercises).set({ exerciseId: newExerciseId }).where(eq(workoutExercises.id, workoutExerciseId));
+  // Update exerciseId in associated workout sets as well
+  await db.update(workoutSets).set({ exerciseId: newExerciseId }).where(eq(workoutSets.workoutExerciseId, workoutExerciseId));
+}
+
 // ─── Workout Sets ─────────────────────────────────────────────────────────────
 
 export async function addSet(set: Omit<WorkoutSet, 'createdAt' | 'updatedAt'>): Promise<WorkoutSet> {
@@ -170,8 +241,6 @@ export async function getSetsForWorkout(workoutId: string): Promise<WorkoutSet[]
     .orderBy(workoutSets.position);
 }
 
-// ─── Exercise History ─────────────────────────────────────────────────────────
-
 export interface ExerciseHistoryEntry {
   workoutId: string;
   workoutName: string;
@@ -182,34 +251,50 @@ export interface ExerciseHistoryEntry {
 export async function getExerciseHistory(
   exerciseId: string,
   limit = 20,
+  excludeWorkoutId?: string,
 ): Promise<ExerciseHistoryEntry[]> {
-  // Get workout exercises for this exercise
+  const conditions = [
+    eq(workoutExercises.exerciseId, exerciseId),
+    isNotNull(workouts.finishedAt),
+  ];
+  if (excludeWorkoutId) {
+    conditions.push(ne(workouts.id, excludeWorkoutId));
+  }
+
+  // Get workout exercises for this exercise from finished workouts
   const wes = await db
     .select({ we: workoutExercises, w: workouts })
     .from(workoutExercises)
-    .leftJoin(workouts, eq(workoutExercises.workoutId, workouts.id))
-    .where(and(eq(workoutExercises.exerciseId, exerciseId)))
+    .innerJoin(workouts, eq(workoutExercises.workoutId, workouts.id))
+    .where(and(...conditions))
     .orderBy(desc(workouts.startedAt))
-    .limit(limit);
+    .limit(limit * 2);
 
   const results: ExerciseHistoryEntry[] = [];
 
   for (const { we, w } of wes) {
     if (!w) continue;
     const sets = await getSetsForWorkoutExercise(we.id);
-    results.push({
-      workoutId: w.id,
-      workoutName: w.name,
-      startedAt: w.startedAt,
-      sets: sets.filter((s) => s.isCompleted),
-    });
+    const completedSets = sets.filter((s) => s.isCompleted);
+    if (completedSets.length > 0) {
+      results.push({
+        workoutId: w.id,
+        workoutName: w.name,
+        startedAt: w.startedAt,
+        sets: completedSets,
+      });
+      if (results.length >= limit) break;
+    }
   }
 
   return results;
 }
 
-export async function getLastPerformance(exerciseId: string): Promise<ExerciseHistoryEntry | null> {
-  const history = await getExerciseHistory(exerciseId, 1);
+export async function getLastPerformance(
+  exerciseId: string,
+  excludeWorkoutId?: string,
+): Promise<ExerciseHistoryEntry | null> {
+  const history = await getExerciseHistory(exerciseId, 1, excludeWorkoutId);
   return history[0] ?? null;
 }
 
@@ -390,7 +475,7 @@ export async function getMusclesRecovery(): Promise<MuscleRecoveryItem[]> {
     .from(workoutExercises)
     .innerJoin(workouts, eq(workoutExercises.workoutId, workouts.id))
     .innerJoin(exercises, eq(workoutExercises.exerciseId, exercises.id))
-    .where(gte(workouts.startedAt, thirtyDaysAgo))
+    .where(and(gte(workouts.startedAt, thirtyDaysAgo), isNotNull(workouts.finishedAt)))
     .orderBy(desc(workouts.startedAt));
 
   const muscleMap: Record<string, string> = {};
@@ -422,7 +507,11 @@ export async function getStreakStats(): Promise<{
   daysSinceLastWorkout: number | null;
   hasTrainedToday: boolean;
 }> {
-  const all = await db.select({ startedAt: workouts.startedAt }).from(workouts).orderBy(desc(workouts.startedAt));
+  const all = await db
+    .select({ startedAt: workouts.startedAt })
+    .from(workouts)
+    .where(isNotNull(workouts.finishedAt))
+    .orderBy(desc(workouts.startedAt));
   if (all.length === 0) {
     return { currentStreak: 0, bestStreak: 0, daysSinceLastWorkout: null, hasTrainedToday: false };
   }
@@ -436,18 +525,23 @@ export async function getStreakStats(): Promise<{
     )
   ).sort().reverse();
 
-  const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const yesterday = new Date(now.getTime() - 86400000);
-  const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+  const toDateStr = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const latestDateStr = uniqueDateStrs[0];
+  const todayDate = new Date();
+  const todayStr = toDateStr(todayDate);
+  const yesterday = new Date(todayDate.getTime() - 86400000);
+  const yesterdayStr = toDateStr(yesterday);
 
   const hasTrainedToday = uniqueDateStrs.includes(todayStr);
   const hasTrainedYesterday = uniqueDateStrs.includes(yesterdayStr);
 
-  const latestDateStr = uniqueDateStrs[0];
-  const latestDate = new Date(latestDateStr);
-  const todayDate = new Date(todayStr);
-  const daysSinceLastWorkout = Math.max(0, Math.floor((todayDate.getTime() - latestDate.getTime()) / 86400000));
+  // Compare date strings directly to avoid DST issues
+  const latestDate = latestDateStr ? new Date(latestDateStr + 'T00:00:00') : null;
+  const daysSinceLastWorkout = latestDate
+    ? Math.round((new Date(todayStr + 'T00:00:00').getTime() - latestDate.getTime()) / 86400000)
+    : null;
 
   let currentStreak = 0;
   if (hasTrainedToday || hasTrainedYesterday) {

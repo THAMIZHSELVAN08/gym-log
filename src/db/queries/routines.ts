@@ -93,3 +93,67 @@ export async function reorderRoutineExercises(
     await db.update(routineExercises).set({ position: i }).where(eq(routineExercises.id, exerciseIds[i]!));
   }
 }
+
+export async function replaceRoutineExercises(
+  routineId: string,
+  newExercises: {
+    exerciseId: string;
+    defaultSets?: number;
+    targetRepsMin?: number;
+    targetRepsMax?: number;
+    restSeconds?: number;
+    notes?: string | null;
+  }[],
+): Promise<void> {
+  await db.delete(routineExercises).where(eq(routineExercises.routineId, routineId));
+
+  const now = new Date().toISOString();
+  for (let i = 0; i < newExercises.length; i++) {
+    const item = newExercises[i]!;
+    const id = generateId();
+    await db.insert(routineExercises).values({
+      id,
+      routineId,
+      exerciseId: item.exerciseId,
+      position: i,
+      defaultSets: item.defaultSets ?? 3,
+      targetRepsMin: item.targetRepsMin ?? 8,
+      targetRepsMax: item.targetRepsMax ?? 12,
+      restSeconds: item.restSeconds ?? 120,
+      notes: item.notes ?? null,
+      supersetGroupId: null,
+      createdAt: now,
+    });
+  }
+}
+
+export async function duplicateRoutine(id: string, newName?: string): Promise<Routine> {
+  const original = await getRoutineById(id);
+  if (!original) throw new Error(`Routine ${id} not found`);
+
+  const name = newName || `${original.name} (Copy)`;
+  const newRoutine = await createRoutine({
+    name,
+    description: original.description,
+    colorHex: original.colorHex ?? '#F97316',
+    isArchived: false,
+    lastPerformedAt: null,
+  });
+
+  const originalExercises = await getRoutineExercises(id);
+  for (let i = 0; i < originalExercises.length; i++) {
+    const row = originalExercises[i]!;
+    await addExerciseToRoutine({
+      routineId: newRoutine.id,
+      exerciseId: row.re.exerciseId,
+      position: i,
+      defaultSets: row.re.defaultSets,
+      targetRepsMin: row.re.targetRepsMin,
+      targetRepsMax: row.re.targetRepsMax,
+      restSeconds: row.re.restSeconds,
+      notes: row.re.notes,
+    });
+  }
+
+  return newRoutine;
+}

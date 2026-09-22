@@ -18,6 +18,7 @@ export const exercises = sqliteTable('exercises', {
   movementType: text('movement_type').notNull().default('compound'), // compound | isolation
   exerciseType: text('exercise_type').notNull().default('weight_reps'), // weight_reps | bodyweight | duration | assisted_bodyweight
   instructions: text('instructions'),
+  pinnedNote: text('pinned_note'), // Persistent reminder across all workouts
   isCustom: integer('is_custom', { mode: 'boolean' }).notNull().default(false),
   isArchived: integer('is_archived', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),

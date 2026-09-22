@@ -60,6 +60,10 @@ export async function updateExercise(id: string, data: Partial<Exercise>): Promi
   await db.update(exercises).set({ ...data, updatedAt: new Date().toISOString() }).where(eq(exercises.id, id));
 }
 
+export async function updatePinnedNote(id: string, pinnedNote: string | null): Promise<void> {
+  await db.update(exercises).set({ pinnedNote, updatedAt: new Date().toISOString() }).where(eq(exercises.id, id));
+}
+
 export async function archiveExercise(id: string): Promise<void> {
   await db.update(exercises).set({ isArchived: true }).where(eq(exercises.id, id));
 }

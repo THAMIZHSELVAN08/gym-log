@@ -1,43 +1,53 @@
-import { View, Text, Pressable, ScrollView, Alert } from 'react-native';
+import { View, Text, Pressable, ScrollView, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Play, Edit3, Dumbbell, MoreHorizontal } from 'lucide-react-native';
+import { Plus, Play, MoreHorizontal, Dumbbell } from 'lucide-react-native';
 import { getAllRoutines, deleteRoutine } from '../../src/db/queries/routines';
-import { format } from 'date-fns';
+import { isToday, isYesterday } from 'date-fns';
+import { useState } from 'react';
+
+function formatLastDone(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (isToday(d)) return 'Today';
+  if (isYesterday(d)) return 'Yesterday';
+  const diff = Math.round((Date.now() - d.getTime()) / 86400000);
+  if (diff < 7) return `${diff} days ago`;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
 
 export default function WorkoutsScreen() {
   const qc = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
 
   const { data: routines = [], isLoading } = useQuery({
     queryKey: ['routines'],
     queryFn: getAllRoutines,
   });
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await qc.invalidateQueries({ queryKey: ['routines'] });
+    setRefreshing(false);
+  };
+
   const deleteMutation = useMutation({
     mutationFn: deleteRoutine,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['routines'] }),
   });
 
-  const handleDelete = (id: string, name: string) => {
-    Alert.alert(
-      `Delete "${name}"?`,
-      'This will not affect your completed workout history.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => deleteMutation.mutate(id),
-        },
-      ],
-    );
-  };
-
   const handleMore = (id: string, name: string) => {
     Alert.alert(name, '', [
       { text: 'Edit', onPress: () => router.push(`/routine/${id}`) },
-      { text: 'Delete', style: 'destructive', onPress: () => handleDelete(id, name) },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () =>
+          Alert.alert(`Delete "${name}"?`, 'This will not affect your completed workouts.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete', style: 'destructive', onPress: () => deleteMutation.mutate(id) },
+          ]),
+      },
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
@@ -48,104 +58,96 @@ export default function WorkoutsScreen() {
         className="flex-1"
         contentContainerStyle={{ paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#F97316" />
+        }
       >
         {/* Header */}
-        <View className="px-5 pt-4 pb-5 flex-row items-center justify-between">
-          <View>
-            <Text className="text-text-tertiary text-xs uppercase tracking-widest font-semibold">My</Text>
-            <Text className="text-text-primary text-3xl font-bold tracking-tight">Workouts</Text>
-          </View>
+        <View className="px-5 pt-5 pb-4 flex-row items-center justify-between">
+          <Text className="text-text-primary text-2xl font-bold tracking-tight">Workouts</Text>
           <Pressable
             onPress={() => router.push('/routine/create')}
-            className="w-10 h-10 rounded-full bg-accent items-center justify-center active:opacity-80"
+            className="w-9 h-9 rounded-full bg-accent items-center justify-center active:opacity-80"
           >
-            <Plus size={22} color="white" />
+            <Plus size={20} color="white" />
           </Pressable>
         </View>
 
-        {/* Empty state */}
-        {!isLoading && routines.length === 0 && (
-          <View className="px-4 items-center py-12">
-            <View className="w-20 h-20 rounded-full bg-card border border-border items-center justify-center mb-4">
-              <Dumbbell size={36} color="#F97316" />
+        <View className="px-4">
+          {/* Always-visible: Start Empty Workout */}
+          <Pressable
+            onPress={() => router.push('/workout/active?empty=1')}
+            className="flex-row items-center py-4 border-b border-border active:opacity-70"
+          >
+            <View className="w-9 h-9 rounded-full bg-surface border border-border items-center justify-center mr-4">
+              <Plus size={17} color="#F97316" />
             </View>
-            <Text className="text-text-primary text-xl font-bold text-center mb-2">No workouts yet</Text>
-            <Text className="text-text-tertiary text-sm text-center mb-6 max-w-xs">
-              Create a workout template to quickly start training sessions.
-            </Text>
-            <Pressable
-              onPress={() => router.push('/routine/create')}
-              className="bg-accent px-8 py-3.5 rounded-full active:opacity-90"
-            >
-              <Text className="text-white font-bold text-base">Create Workout</Text>
-            </Pressable>
-          </View>
-        )}
+            <Text className="text-text-primary font-semibold text-base flex-1">Empty Workout</Text>
+            <Text className="text-text-muted text-xs">Start now</Text>
+          </Pressable>
 
-        {/* Routines list */}
-        <View className="px-4 gap-3">
-          {routines.map((routine) => (
-            <View key={routine.id} className="bg-card border border-border rounded-2xl overflow-hidden">
-              {/* Color accent bar */}
-              <View className="h-0.5 bg-accent" />
-
-              <View className="px-5 py-4">
-                <View className="flex-row items-start justify-between mb-3">
-                  <View className="flex-1">
-                    <Text className="text-text-primary text-lg font-bold">{routine.name}</Text>
-                    {routine.description && (
-                      <Text className="text-text-tertiary text-xs mt-0.5" numberOfLines={1}>
-                        {routine.description}
-                      </Text>
-                    )}
-                    {routine.lastPerformedAt && (
-                      <Text className="text-text-muted text-xs mt-1">
-                        Last: {format(new Date(routine.lastPerformedAt), 'MMM d')}
-                      </Text>
-                    )}
-                  </View>
-                  <Pressable
-                    onPress={() => handleMore(routine.id, routine.name)}
-                    className="w-8 h-8 items-center justify-center -mt-1 -mr-2 active:opacity-60"
-                  >
-                    <MoreHorizontal size={20} color="#71717A" />
-                  </Pressable>
-                </View>
-
-                {/* Actions */}
-                <View className="flex-row gap-2 mt-1">
-                  <Pressable
-                    onPress={() =>
-                      router.push(
-                        `/workout/active?routineId=${routine.id}&routineName=${encodeURIComponent(routine.name)}`,
-                      )
-                    }
-                    className="flex-1 bg-accent rounded-xl py-2.5 flex-row items-center justify-center gap-2 active:opacity-85"
-                  >
-                    <Play size={16} color="white" fill="white" />
-                    <Text className="text-white font-semibold text-sm">Start</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => router.push(`/routine/${routine.id}`)}
-                    className="w-10 h-10 bg-surface border border-border rounded-xl items-center justify-center active:opacity-70"
-                  >
-                    <Edit3 size={16} color="#A1A1AA" />
-                  </Pressable>
-                </View>
-              </View>
+          {/* Routines list */}
+          {!isLoading && routines.length === 0 && (
+            <View className="items-center py-12">
+              <Dumbbell size={32} color="#3A3A3A" />
+              <Text className="text-text-secondary text-base font-semibold mt-4 mb-2">
+                No routines yet
+              </Text>
+              <Text className="text-text-tertiary text-sm text-center mb-6">
+                Create a routine to quickly start a workout.
+              </Text>
+              <Pressable
+                onPress={() => router.push('/routine/create')}
+                className="bg-accent px-6 py-3 rounded-full active:opacity-90"
+              >
+                <Text className="text-white font-bold">Create Routine</Text>
+              </Pressable>
             </View>
-          ))}
-
-          {/* Create new button at bottom */}
-          {routines.length > 0 && (
-            <Pressable
-              onPress={() => router.push('/routine/create')}
-              className="border border-dashed border-border rounded-2xl py-4 flex-row items-center justify-center gap-2 active:opacity-70"
-            >
-              <Plus size={18} color="#71717A" />
-              <Text className="text-text-tertiary font-medium">Create Workout</Text>
-            </Pressable>
           )}
+
+          {routines.map((routine, i) => (
+            <Pressable
+              key={routine.id}
+              onPress={() =>
+                router.push(`/workout/active?routineId=${routine.id}&routineName=${encodeURIComponent(routine.name)}`)
+              }
+              className={`flex-row items-center py-4 active:opacity-70 ${
+                i < routines.length - 1 ? 'border-b border-border' : ''
+              }`}
+            >
+              {/* Color dot */}
+              <View
+                className="w-2.5 h-2.5 rounded-full mr-4"
+                style={{ backgroundColor: routine.colorHex ?? '#F97316' }}
+              />
+
+              <View className="flex-1">
+                <Text className="text-text-primary font-semibold text-base">{routine.name}</Text>
+                <Text className="text-text-tertiary text-xs mt-0.5">
+                  {routine.lastPerformedAt
+                    ? formatLastDone(routine.lastPerformedAt)
+                    : 'Never performed'}
+                </Text>
+              </View>
+
+              <View className="flex-row items-center gap-3">
+                <Pressable
+                  onPress={() =>
+                    router.push(`/workout/active?routineId=${routine.id}&routineName=${encodeURIComponent(routine.name)}`)
+                  }
+                  className="w-8 h-8 rounded-full bg-accent/10 items-center justify-center active:opacity-75"
+                >
+                  <Play size={13} color="#F97316" fill="#F97316" />
+                </Pressable>
+                <Pressable
+                  onPress={() => handleMore(routine.id, routine.name)}
+                  className="w-8 h-8 items-center justify-center active:opacity-60"
+                >
+                  <MoreHorizontal size={18} color="#71717A" />
+                </Pressable>
+              </View>
+            </Pressable>
+          ))}
         </View>
       </ScrollView>
     </SafeAreaView>

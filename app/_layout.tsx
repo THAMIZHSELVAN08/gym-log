@@ -9,6 +9,7 @@ import { runMigrations } from '../src/db/migrate';
 import { seedExercises } from '../src/data/seeder';
 
 import { useThemeStore } from '../src/store/themeStore';
+import { useWorkoutStore } from '../src/store/workoutStore';
 import { vars } from 'nativewind';
 
 const darkThemeVars = vars({
@@ -55,6 +56,7 @@ export default function RootLayout() {
         await initTheme();
         await runMigrations();
         await seedExercises();
+        await useWorkoutStore.getState().recoverActiveWorkout();
         setReady(true);
       } catch (e) {
         console.error('DB init error:', e);

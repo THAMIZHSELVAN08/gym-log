@@ -1,11 +1,12 @@
-import { View, Text, Pressable, SectionList } from 'react-native';
+import { View, Text, Pressable, SectionList, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, Clock, Trophy } from 'lucide-react-native';
-import { getAllWorkouts } from '../../src/db/queries/workouts';
+import { getAllWorkouts, deleteWorkout } from '../../src/db/queries/workouts';
 import { formatDuration } from '../../src/utils/calculations';
 import { format, isToday, isYesterday } from 'date-fns';
+import { useState } from 'react';
 
 type Workout = Awaited<ReturnType<typeof getAllWorkouts>>[0];
 
@@ -33,10 +34,18 @@ function groupWorkoutsByDate(workouts: Workout[]): WorkoutSection[] {
 }
 
 export default function HistoryScreen() {
+  const qc = useQueryClient();
+  const [refreshing, setRefreshing] = useState(false);
   const { data: allWorkouts = [], isLoading } = useQuery({
     queryKey: ['all-workouts'],
     queryFn: getAllWorkouts,
   });
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await qc.invalidateQueries({ queryKey: ['all-workouts'] });
+    setRefreshing(false);
+  };
 
   const sections = groupWorkoutsByDate(allWorkouts);
 
@@ -65,6 +74,13 @@ export default function HistoryScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#F97316"
+          />
+        }
         renderSectionHeader={({ section }) => (
           <View className="py-2 mt-2">
             <Text className="text-text-secondary text-xs font-semibold uppercase tracking-widest">
@@ -75,7 +91,29 @@ export default function HistoryScreen() {
         renderItem={({ item: workout }) => (
           <Pressable
             onPress={() => router.push(`/workout/${workout.id}`)}
-            className="bg-card border border-border rounded-2xl px-5 py-4 mb-3 active:opacity-80"
+            onLongPress={() => {
+              Alert.alert('Delete Workout?', `Delete "${workout.name}"? This cannot be undone.`, [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    qc.setQueryData<any[]>(['all-workouts'], (old) =>
+                      old ? old.filter((w) => w.id !== workout.id) : [],
+                    );
+                    qc.setQueryData<any[]>(['recent-workouts'], (old) =>
+                      old ? old.filter((w) => w.id !== workout.id) : [],
+                    );
+                    await deleteWorkout(workout.id);
+                    await qc.refetchQueries({ queryKey: ['all-workouts'] });
+                    await qc.refetchQueries({ queryKey: ['recent-workouts'] });
+                    await qc.invalidateQueries({ queryKey: ['streak-stats'] });
+                  },
+                },
+              ]);
+            }}
+            style={({ pressed }) => [{ opacity: pressed ? 0.75 : 1 }]}
+            className="bg-card border border-border rounded-2xl px-5 py-4 mb-3"
           >
             <View className="flex-row items-start justify-between mb-3">
               <View className="flex-1">
@@ -107,7 +145,7 @@ export default function HistoryScreen() {
               {(workout.prCount ?? 0) > 0 && (
                 <View className="flex-row items-center gap-1">
                   <Trophy size={12} color="#F59E0B" />
-                  <Text className="text-pr font-semibold text-sm">{workout.prCount}</Text>
+                  <Text className="text-amber-500 font-semibold text-sm">{workout.prCount}</Text>
                   <Text className="text-text-muted text-xs">PRs</Text>
                 </View>
               )}
