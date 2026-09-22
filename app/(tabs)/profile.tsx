@@ -1,10 +1,11 @@
 import { View, Text, ScrollView, Pressable, Alert, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { User, Ruler, Download, ChevronRight, Plus, Moon } from 'lucide-react-native';
+import { User, Ruler, Download, ChevronRight, Plus, Moon, Disc } from 'lucide-react-native';
 import { getWeightHistory, getLatestMeasurement, addMeasurement } from '../../src/db/queries/measurements';
 import { getAllWorkouts } from '../../src/db/queries/workouts';
 import { exportWorkouts } from '../../src/utils/export';
+import { PlateCalculatorModal } from '../../src/components/tools/PlateCalculatorModal';
 import { format } from 'date-fns';
 import { useState } from 'react';
 
@@ -55,6 +56,8 @@ export default function ProfileScreen() {
 
   const totalSets = allWorkouts.reduce((s, w) => s + (w.totalSets ?? 0), 0);
   const totalVolume = allWorkouts.reduce((s, w) => s + (w.totalVolume ?? 0), 0);
+
+  const [showPlateCalc, setShowPlateCalc] = useState(false);
 
   return (
     <SafeAreaView className="flex-1 bg-background">
@@ -163,11 +166,17 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Settings */}
+        {/* Tools & Settings */}
         <View className="px-4 mb-5">
-          <Text className="text-text-secondary text-xs font-semibold uppercase tracking-widest mb-3">Settings</Text>
+          <Text className="text-text-secondary text-xs font-semibold uppercase tracking-widest mb-3">Tools & Settings</Text>
           <View className="bg-card border border-border rounded-2xl overflow-hidden">
             {[
+              {
+                label: 'Plate Calculator',
+                value: 'Barbell tool',
+                icon: Disc,
+                onPress: () => setShowPlateCalc(true),
+              },
               {
                 label: 'Units',
                 value: 'kg / cm',
@@ -182,7 +191,7 @@ export default function ProfileScreen() {
               },
               {
                 label: 'Export Data',
-                value: '',
+                value: 'CSV / JSON',
                 icon: Download,
                 onPress: () => {
                   Alert.alert(
@@ -219,6 +228,13 @@ export default function ProfileScreen() {
           <Text className="text-text-muted text-xs mt-1">Version 1.0.0 · Think less. Log faster.</Text>
         </View>
       </ScrollView>
+
+      {/* Plate Calculator Modal */}
+      <PlateCalculatorModal
+        visible={showPlateCalc}
+        onClose={() => setShowPlateCalc(false)}
+        initialWeight={60}
+      />
     </SafeAreaView>
   );
 }

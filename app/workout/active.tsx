@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   X,
   Plus,
@@ -21,12 +21,15 @@ import {
   Trophy,
   Dumbbell,
   Minus,
+  Disc,
+  Lightbulb,
 } from 'lucide-react-native';
 import { useWorkoutStore } from '../../src/store/workoutStore';
 import { useTimerStore } from '../../src/store/timerStore';
 import { getRoutineExercises } from '../../src/db/queries/routines';
 import { getLastPerformance } from '../../src/db/queries/workouts';
-import { formatDuration } from '../../src/utils/calculations';
+import { formatDuration, getProgressionSuggestion } from '../../src/utils/calculations';
+import { PlateCalculatorModal } from '../../src/components/tools/PlateCalculatorModal';
 import type { ActiveExercise, ActiveSet } from '../../src/store/workoutStore';
 import type { PrResult } from '../../src/services/prEngine';
 
@@ -224,6 +227,7 @@ interface ExerciseCardProps {
   onAdjustWeight: (setId: string, delta: number) => void;
   onAdjustReps: (setId: string, delta: number) => void;
   onDeleteSet: (setId: string) => void;
+  onOpenPlateCalc: (weight: number) => void;
 }
 
 function ExerciseCard({
@@ -236,6 +240,7 @@ function ExerciseCard({
   onAdjustWeight,
   onAdjustReps,
   onDeleteSet,
+  onOpenPlateCalc,
 }: ExerciseCardProps) {
   const [showPrev, setShowPrev] = useState(true);
 
@@ -251,17 +256,38 @@ function ExerciseCard({
   };
   const muscleColor = MUSCLE_COLORS[exercise.primaryMuscle] ?? '#F97316';
 
+  // Compute progressive overload suggestion
+  const overloadSuggestion = useMemo(() => {
+    if (!previousSets || previousSets.length === 0) return null;
+    const topPrev = previousSets.find((s) => (s.weight ?? 0) > 0 && (s.reps ?? 0) > 0);
+    if (!topPrev || !topPrev.weight || !topPrev.reps) return null;
+    return getProgressionSuggestion(topPrev.weight, topPrev.reps, 8, 12);
+  }, [previousSets]);
+
+  const currentTopWeight = exercise.sets.find((s) => (s.weight ?? 0) > 0)?.weight ?? previousSets[0]?.weight ?? 60;
+
   return (
     <View className="mx-4 mb-4 bg-card border border-border rounded-2xl overflow-hidden">
       {/* Header */}
       <View className="px-4 py-3 flex-row items-center gap-3">
-        <View>
+        <View className="flex-1">
           <Text className="text-text-primary font-bold text-lg">{exercise.exerciseName}</Text>
           <Text style={{ color: muscleColor }} className="text-xs font-semibold capitalize mt-0.5">
             {exercise.primaryMuscle.replace(/_/g, ' ')}
           </Text>
         </View>
-        <View className="flex-1" />
+
+        {/* Plate Calculator Button */}
+        {exercise.exerciseType !== 'bodyweight' && exercise.exerciseType !== 'duration' && (
+          <Pressable
+            onPress={() => onOpenPlateCalc(currentTopWeight)}
+            className="flex-row items-center gap-1 bg-surface border border-border rounded-lg px-2 py-1 active:opacity-60"
+          >
+            <Disc size={13} color="#F97316" />
+            <Text className="text-text-secondary text-2xs font-semibold">Plates</Text>
+          </Pressable>
+        )}
+
         <Pressable
           onPress={() => setShowPrev((v) => !v)}
           className="flex-row items-center gap-1 active:opacity-60"
@@ -270,6 +296,16 @@ function ExerciseCard({
           {showPrev ? <ChevronUp size={14} color="#71717A" /> : <ChevronDown size={14} color="#71717A" />}
         </Pressable>
       </View>
+
+      {/* Progressive Overload Suggestion */}
+      {overloadSuggestion && (
+        <View className="mx-4 mb-2.5 bg-accent/10 border border-accent/25 rounded-xl px-3 py-1.5 flex-row items-center gap-2">
+          <Lightbulb size={13} color="#F97316" />
+          <Text className="text-text-secondary text-2xs flex-1">
+            Target: <Text className="text-accent font-bold">{overloadSuggestion.weight} kg</Text> × {overloadSuggestion.repsMin}-{overloadSuggestion.repsMax} reps
+          </Text>
+        </View>
+      )}
 
       {/* Previous performance */}
       {showPrev && previousSets.length > 0 && (
@@ -353,6 +389,7 @@ export default function ActiveWorkoutScreen() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [previousPerformances, setPreviousPerformances] = useState<Record<string, { weight: number | null; reps: number | null }[]>>({});
   const [visiblePr, setVisiblePr] = useState<PrResult | null>(null);
+  const [plateCalcWeight, setPlateCalcWeight] = useState<number | null>(null);
 
   // Elapsed timer
   useEffect(() => {
@@ -417,12 +454,12 @@ export default function ActiveWorkoutScreen() {
     if (store.exercises.length > 0) loadPrev();
   }, [store.exercises.length]);
 
-  const handleCompleteSet = useCallback(async (exerciseId: string, workoutExerciseId: string, setId: string, restSeconds: number) => {
+  const handleCompleteSet = useCallback(async (exerciseName: string, workoutExerciseId: string, setId: string, restSeconds: number) => {
     const prs = await store.completeSet(workoutExerciseId, setId);
     if (prs && prs.length > 0) {
       setVisiblePr(prs[0]!);
     }
-    startTimer(restSeconds, exerciseId);
+    startTimer(restSeconds, exerciseName);
   }, [store, startTimer]);
 
   const handleFinish = () => {
@@ -480,6 +517,12 @@ export default function ActiveWorkoutScreen() {
             <Text className="text-text-tertiary text-xs tabular-nums">{formatDuration(elapsedSeconds)}</Text>
           </View>
           <Pressable
+            onPress={() => setPlateCalcWeight(60)}
+            className="w-8 h-8 items-center justify-center bg-surface border border-border rounded-full mr-2 active:opacity-75"
+          >
+            <Disc size={16} color="#F97316" />
+          </Pressable>
+          <Pressable
             onPress={handleFinish}
             className="bg-accent px-4 py-2 rounded-full active:opacity-80"
           >
@@ -536,6 +579,7 @@ export default function ActiveWorkoutScreen() {
                 store.updateSetField(exercise.workoutExerciseId, setId, 'reps', Math.max(0, cur + delta));
               }}
               onDeleteSet={(setId) => store.deleteSet(exercise.workoutExerciseId, setId)}
+              onOpenPlateCalc={(w) => setPlateCalcWeight(w)}
             />
           ))}
 
@@ -558,6 +602,13 @@ export default function ActiveWorkoutScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Plate Calculator Modal */}
+      <PlateCalculatorModal
+        visible={plateCalcWeight !== null}
+        onClose={() => setPlateCalcWeight(null)}
+        initialWeight={plateCalcWeight ?? 60}
+      />
     </SafeAreaView>
   );
 }

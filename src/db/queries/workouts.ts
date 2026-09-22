@@ -212,3 +212,151 @@ export async function getLastPerformance(exerciseId: string): Promise<ExerciseHi
   const history = await getExerciseHistory(exerciseId, 1);
   return history[0] ?? null;
 }
+
+// ─── Analytics & Progress Aggregations ─────────────────────────────────────────
+
+export interface LiftProgressPoint {
+  workoutId: string;
+  workoutName: string;
+  date: string;
+  maxWeight: number;
+  maxReps: number;
+  estimated1rm: number;
+  volume: number;
+}
+
+export async function getExerciseProgression(exerciseId: string): Promise<LiftProgressPoint[]> {
+  const history = await getExerciseHistory(exerciseId, 100);
+  // Sort chronologically ascending
+  const chronological = history.slice().reverse();
+
+  return chronological
+    .map((entry) => {
+      const completed = entry.sets.filter((s) => s.isCompleted && (s.weight ?? 0) > 0);
+      if (completed.length === 0) return null;
+
+      let topWeight = 0;
+      let topReps = 0;
+      let topE1rm = 0;
+      let vol = 0;
+
+      for (const set of completed) {
+        const w = set.weight ?? 0;
+        const r = set.reps ?? 0;
+        vol += w * r;
+        if (w > topWeight || (w === topWeight && r > topReps)) {
+          topWeight = w;
+          topReps = r;
+        }
+        const e1rm = r === 1 ? w : w * (1 + r / 30);
+        if (e1rm > topE1rm) {
+          topE1rm = e1rm;
+        }
+      }
+
+      return {
+        workoutId: entry.workoutId,
+        workoutName: entry.workoutName,
+        date: entry.startedAt,
+        maxWeight: topWeight,
+        maxReps: topReps,
+        estimated1rm: Math.round(topE1rm * 10) / 10,
+        volume: vol,
+      };
+    })
+    .filter((p): p is LiftProgressPoint => p !== null);
+}
+
+export interface MuscleVolumeStats {
+  muscle: string;
+  volume: number;
+  sets: number;
+  percentage: number;
+}
+
+export async function getMuscleVolumeBreakdown(
+  startDate: string,
+  endDate: string,
+): Promise<MuscleVolumeStats[]> {
+  const allSets = await db
+    .select({
+      set: workoutSets,
+      workout: workouts,
+      exercise: exercises,
+    })
+    .from(workoutSets)
+    .innerJoin(workouts, eq(workoutSets.workoutId, workouts.id))
+    .innerJoin(exercises, eq(workoutSets.exerciseId, exercises.id))
+    .where(
+      and(
+        gte(workouts.startedAt, startDate),
+        lte(workouts.startedAt, endDate),
+        eq(workoutSets.isCompleted, true),
+      ),
+    );
+
+  const muscleMap: Record<string, { volume: number; sets: number }> = {};
+  let totalVolume = 0;
+
+  for (const row of allSets) {
+    const muscle = row.exercise.primaryMuscle || 'other';
+    const setVol = (row.set.weight ?? 0) * (row.set.reps ?? 0);
+    if (!muscleMap[muscle]) {
+      muscleMap[muscle] = { volume: 0, sets: 0 };
+    }
+    muscleMap[muscle].volume += setVol;
+    muscleMap[muscle].sets += 1;
+    totalVolume += setVol;
+  }
+
+  const results: MuscleVolumeStats[] = Object.entries(muscleMap).map(([muscle, data]) => ({
+    muscle,
+    volume: Math.round(data.volume),
+    sets: data.sets,
+    percentage: totalVolume > 0 ? Math.round((data.volume / totalVolume) * 100) : 0,
+  }));
+
+  return results.sort((a, b) => b.volume - a.volume);
+}
+
+export interface PeriodStats {
+  workoutsCount: number;
+  totalVolume: number;
+  totalSets: number;
+  totalReps: number;
+  avgDurationSeconds: number;
+}
+
+export async function getPeriodComparison(
+  currentStart: string,
+  currentEnd: string,
+  prevStart: string,
+  prevEnd: string,
+): Promise<{ current: PeriodStats; previous: PeriodStats }> {
+  const currentWorkouts = await getWorkoutsInRange(currentStart, currentEnd);
+  const prevWorkouts = await getWorkoutsInRange(prevStart, prevEnd);
+
+  const compute = (wList: typeof currentWorkouts): PeriodStats => {
+    const workoutsCount = wList.length;
+    const totalVolume = wList.reduce((acc, w) => acc + (w.totalVolume ?? 0), 0);
+    const totalSets = wList.reduce((acc, w) => acc + (w.totalSets ?? 0), 0);
+    const totalReps = wList.reduce((acc, w) => acc + (w.totalReps ?? 0), 0);
+    const durations = wList.map((w) => w.durationSeconds ?? 0).filter((d) => d > 0);
+    const avgDurationSeconds = durations.length > 0
+      ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+      : 0;
+
+    return {
+      workoutsCount,
+      totalVolume: Math.round(totalVolume),
+      totalSets,
+      totalReps,
+      avgDurationSeconds,
+    };
+  };
+
+  return {
+    current: compute(currentWorkouts),
+    previous: compute(prevWorkouts),
+  };
+}
