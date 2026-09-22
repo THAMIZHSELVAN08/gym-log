@@ -9,6 +9,31 @@ import { runMigrations } from '../src/db/migrate';
 import { seedExercises } from '../src/data/seeder';
 
 import { useThemeStore } from '../src/store/themeStore';
+import { vars } from 'nativewind';
+
+const darkThemeVars = vars({
+  '--background': '#0D0D0D',
+  '--surface': '#1A1A1A',
+  '--card': '#242424',
+  '--border': '#2E2E2E',
+  '--border-light': '#3A3A3A',
+  '--text-primary': '#FFFFFF',
+  '--text-secondary': '#A1A1AA',
+  '--text-tertiary': '#71717A',
+  '--text-muted': '#52525B',
+});
+
+const lightThemeVars = vars({
+  '--background': '#F8FAFC',
+  '--surface': '#F1F5F9',
+  '--card': '#FFFFFF',
+  '--border': '#E2E8F0',
+  '--border-light': '#CBD5E1',
+  '--text-primary': '#0F172A',
+  '--text-secondary': '#475569',
+  '--text-tertiary': '#64748B',
+  '--text-muted': '#94A3B8',
+});
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,7 +66,7 @@ export default function RootLayout() {
 
   if (error) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
+      <View style={darkThemeVars} className="flex-1 items-center justify-center bg-background">
         <Text className="text-error text-base font-semibold">DB Error</Text>
         <Text className="text-text-secondary text-sm mt-2">{error}</Text>
       </View>
@@ -50,17 +75,17 @@ export default function RootLayout() {
 
   if (!ready) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
+      <View style={darkThemeVars} className="flex-1 items-center justify-center bg-background">
         <Text className="text-accent text-2xl font-bold tracking-wider">GYMLOG</Text>
         <Text className="text-text-tertiary text-sm mt-2">Loading...</Text>
       </View>
     );
   }
 
-  const isDark = theme === 'dark';
+  const isDark = theme !== 'light';
 
   return (
-    <GestureHandlerRootView className="flex-1">
+    <GestureHandlerRootView style={[{ flex: 1 }, isDark ? darkThemeVars : lightThemeVars]}>
       <QueryClientProvider client={queryClient}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: isDark ? '#0D0D0D' : '#F8FAFC' } }}>
