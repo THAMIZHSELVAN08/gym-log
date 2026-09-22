@@ -1,13 +1,11 @@
-import * as SQLite from 'expo-sqlite';
+import { sqlite } from './client';
 
 /**
  * Runs the database migrations on app start.
  * Uses expo-sqlite's built-in runAsync for raw SQL DDL.
  */
 export async function runMigrations(): Promise<void> {
-  const db = SQLite.openDatabaseSync('gymlog.db');
-
-  await db.execAsync(`
+  await sqlite.execAsync(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
 

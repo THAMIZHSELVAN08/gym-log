@@ -29,15 +29,21 @@ export async function getExercisesByMuscle(muscle: MuscleGroup): Promise<Exercis
     .orderBy(asc(exercises.name));
 }
 
-export async function getExerciseById(id: string): Promise<Exercise | undefined> {
+export async function getExerciseById(id: string): Promise<Exercise | null> {
   const result = await db.select().from(exercises).where(eq(exercises.id, id)).limit(1);
-  return result[0];
+  return result[0] ?? null;
 }
 
 export async function createExercise(data: Omit<NewExercise, 'id' | 'createdAt' | 'updatedAt'>): Promise<Exercise> {
   const id = generateId();
   const now = new Date().toISOString();
   const newExercise: NewExercise = {
+    secondaryMuscles: '[]',
+    equipment: 'barbell',
+    movementType: 'compound',
+    exerciseType: 'weight_reps',
+    instructions: null,
+    isArchived: false,
     ...data,
     id,
     isCustom: true,
@@ -45,7 +51,9 @@ export async function createExercise(data: Omit<NewExercise, 'id' | 'createdAt' 
     updatedAt: now,
   };
   await db.insert(exercises).values(newExercise);
-  return (await getExerciseById(id))!;
+  const result = await getExerciseById(id);
+  if (!result) throw new Error(`Failed to create exercise ${id}`);
+  return result;
 }
 
 export async function updateExercise(id: string, data: Partial<Exercise>): Promise<void> {

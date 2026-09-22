@@ -17,14 +17,14 @@ export async function getMeasurements(type: MeasurementType, limit = 50): Promis
     .limit(limit);
 }
 
-export async function getLatestMeasurement(type: MeasurementType): Promise<BodyMeasurement | undefined> {
+export async function getLatestMeasurement(type: MeasurementType): Promise<BodyMeasurement | null> {
   const result = await db
     .select()
     .from(bodyMeasurements)
     .where(eq(bodyMeasurements.type, type))
     .orderBy(desc(bodyMeasurements.measuredAt))
     .limit(1);
-  return result[0];
+  return result[0] ?? null;
 }
 
 export async function addMeasurement(
@@ -32,7 +32,13 @@ export async function addMeasurement(
 ): Promise<BodyMeasurement> {
   const id = generateId();
   const now = new Date().toISOString();
-  const measurement: NewBodyMeasurement = { ...data, id, createdAt: now };
+  const measurement: NewBodyMeasurement = {
+    notes: null,
+    unit: 'kg',
+    ...data,
+    id,
+    createdAt: now,
+  };
   await db.insert(bodyMeasurements).values(measurement);
   const result = await db.select().from(bodyMeasurements).where(eq(bodyMeasurements.id, id)).limit(1);
   return result[0]!;

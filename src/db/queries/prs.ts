@@ -19,14 +19,14 @@ export async function getPrsForExercise(exerciseId: string): Promise<PersonalRec
 export async function getLatestPrForExercise(
   exerciseId: string,
   prType: PrType,
-): Promise<PersonalRecord | undefined> {
+): Promise<PersonalRecord | null> {
   const result = await db
     .select()
     .from(personalRecords)
     .where(and(eq(personalRecords.exerciseId, exerciseId), eq(personalRecords.prType, prType)))
     .orderBy(desc(personalRecords.achievedAt))
     .limit(1);
-  return result[0];
+  return result[0] ?? null;
 }
 
 export async function getRecentPrs(limit = 10): Promise<PersonalRecord[]> {
@@ -40,7 +40,15 @@ export async function getRecentPrs(limit = 10): Promise<PersonalRecord[]> {
 export async function savePr(data: Omit<NewPersonalRecord, 'id' | 'createdAt'>): Promise<PersonalRecord> {
   const id = generateId();
   const now = new Date().toISOString();
-  const pr: NewPersonalRecord = { ...data, id, createdAt: now };
+  const pr: NewPersonalRecord = {
+    weight: null,
+    reps: null,
+    estimated1rm: null,
+    volume: null,
+    ...data,
+    id,
+    createdAt: now,
+  };
   await db.insert(personalRecords).values(pr);
   const result = await db.select().from(personalRecords).where(eq(personalRecords.id, id)).limit(1);
   return result[0]!;

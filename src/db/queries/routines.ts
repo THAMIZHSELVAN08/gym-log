@@ -19,17 +19,28 @@ export async function getAllRoutines(): Promise<Routine[]> {
     .orderBy(desc(routines.updatedAt));
 }
 
-export async function getRoutineById(id: string): Promise<Routine | undefined> {
+export async function getRoutineById(id: string): Promise<Routine | null> {
   const result = await db.select().from(routines).where(eq(routines.id, id)).limit(1);
-  return result[0];
+  return result[0] ?? null;
 }
 
 export async function createRoutine(data: Omit<NewRoutine, 'id' | 'createdAt' | 'updatedAt'>): Promise<Routine> {
   const id = generateId();
   const now = new Date().toISOString();
-  const newRoutine: NewRoutine = { ...data, id, createdAt: now, updatedAt: now };
+  const newRoutine: NewRoutine = {
+    description: null,
+    colorHex: '#F97316',
+    isArchived: false,
+    lastPerformedAt: null,
+    ...data,
+    id,
+    createdAt: now,
+    updatedAt: now,
+  };
   await db.insert(routines).values(newRoutine);
-  return (await getRoutineById(id))!;
+  const result = await getRoutineById(id);
+  if (!result) throw new Error(`Failed to create routine ${id}`);
+  return result;
 }
 
 export async function updateRoutine(id: string, data: Partial<Routine>): Promise<void> {
@@ -52,7 +63,19 @@ export async function getRoutineExercises(routineId: string) {
 export async function addExerciseToRoutine(data: Omit<NewRoutineExercise, 'id' | 'createdAt'>): Promise<void> {
   const id = generateId();
   const now = new Date().toISOString();
-  await db.insert(routineExercises).values({ ...data, id, createdAt: now });
+  const newRE: NewRoutineExercise = {
+    position: 0,
+    defaultSets: 3,
+    targetRepsMin: 8,
+    targetRepsMax: 12,
+    restSeconds: 120,
+    supersetGroupId: null,
+    notes: null,
+    ...data,
+    id,
+    createdAt: now,
+  };
+  await db.insert(routineExercises).values(newRE);
 }
 
 export async function updateRoutineExercise(id: string, data: Partial<RoutineExercise>): Promise<void> {

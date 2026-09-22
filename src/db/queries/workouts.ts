@@ -17,14 +17,30 @@ import { generateId } from '../../utils/id';
 export async function createWorkout(data: Omit<NewWorkout, 'id' | 'createdAt' | 'updatedAt'>): Promise<Workout> {
   const id = generateId();
   const now = new Date().toISOString();
-  const newWorkout: NewWorkout = { ...data, id, createdAt: now, updatedAt: now };
+  const newWorkout: NewWorkout = {
+    routineId: null,
+    notes: null,
+    finishedAt: null,
+    durationSeconds: 0,
+    totalVolume: 0,
+    totalSets: 0,
+    totalReps: 0,
+    prCount: 0,
+    syncedAt: null,
+    ...data,
+    id,
+    createdAt: now,
+    updatedAt: now,
+  };
   await db.insert(workouts).values(newWorkout);
-  return (await getWorkoutById(id))!;
+  const result = await getWorkoutById(id);
+  if (!result) throw new Error(`Failed to create workout ${id}`);
+  return result;
 }
 
-export async function getWorkoutById(id: string): Promise<Workout | undefined> {
+export async function getWorkoutById(id: string): Promise<Workout | null> {
   const result = await db.select().from(workouts).where(eq(workouts.id, id)).limit(1);
-  return result[0];
+  return result[0] ?? null;
 }
 
 export async function getAllWorkouts(): Promise<Workout[]> {
@@ -83,6 +99,8 @@ export async function addExerciseToWorkout(
     exerciseId,
     position,
     restSeconds,
+    supersetGroupId: null,
+    notes: null,
     createdAt: now,
   };
   await db.insert(workoutExercises).values(newWE);
@@ -118,7 +136,12 @@ export async function removeExerciseFromWorkout(workoutExerciseId: string): Prom
 
 export async function addSet(set: Omit<WorkoutSet, 'createdAt' | 'updatedAt'>): Promise<WorkoutSet> {
   const now = new Date().toISOString();
-  await db.insert(workoutSets).values({ ...set, createdAt: now, updatedAt: now });
+  const setWithDefaults: WorkoutSet = {
+    ...set,
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.insert(workoutSets).values(setWithDefaults);
   const result = await db.select().from(workoutSets).where(eq(workoutSets.id, set.id)).limit(1);
   return result[0]!;
 }

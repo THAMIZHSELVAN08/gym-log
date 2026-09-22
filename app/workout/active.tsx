@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   X,
   Plus,
@@ -348,6 +348,7 @@ export default function ActiveWorkoutScreen() {
 
   const { startTimer } = useTimerStore();
   const store = useWorkoutStore();
+  const isStartingRef = useRef(false);
   const [isStarting, setIsStarting] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [previousPerformances, setPreviousPerformances] = useState<Record<string, { weight: number | null; reps: number | null }[]>>({});
@@ -361,34 +362,40 @@ export default function ActiveWorkoutScreen() {
 
   // Initialize workout
   useEffect(() => {
-    if (store.isActive || isStarting) return;
+    if (store.isActive || isStartingRef.current) return;
+    isStartingRef.current = true;
+    setIsStarting(true);
 
     async function init() {
-      setIsStarting(true);
-      const name = params.routineName
-        ? decodeURIComponent(params.routineName)
-        : 'Workout';
+      try {
+        const name = params.routineName
+          ? decodeURIComponent(params.routineName)
+          : 'Workout';
 
-      await store.startWorkout(name, params.routineId);
+        await store.startWorkout(name, params.routineId);
 
-      // If starting from a routine, load its exercises
-      if (params.routineId) {
-        const routineExs = await getRoutineExercises(params.routineId);
-        for (const { re, exercise } of routineExs) {
-          if (!exercise) continue;
-          await store.addExercise({
-            exerciseId: exercise.id,
-            exerciseName: exercise.name,
-            primaryMuscle: exercise.primaryMuscle,
-            equipment: exercise.equipment,
-            exerciseType: exercise.exerciseType,
-            defaultSets: re.defaultSets,
-            restSeconds: re.restSeconds ?? 120,
-          });
+        // If starting from a routine, load its exercises
+        if (params.routineId) {
+          const routineExs = await getRoutineExercises(params.routineId);
+          for (const { re, exercise } of routineExs) {
+            if (!exercise) continue;
+            await store.addExercise({
+              exerciseId: exercise.id,
+              exerciseName: exercise.name,
+              primaryMuscle: exercise.primaryMuscle,
+              equipment: exercise.equipment,
+              exerciseType: exercise.exerciseType,
+              defaultSets: re.defaultSets,
+              restSeconds: re.restSeconds ?? 120,
+            });
+          }
         }
+      } catch (err) {
+        console.error('Failed to init active workout:', err);
+        isStartingRef.current = false;
+      } finally {
+        setIsStarting(false);
       }
-
-      setIsStarting(false);
     }
     init();
   }, []);
