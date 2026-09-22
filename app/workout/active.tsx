@@ -27,7 +27,11 @@ import {
 import { useWorkoutStore } from '../../src/store/workoutStore';
 import { useTimerStore } from '../../src/store/timerStore';
 import { getRoutineExercises } from '../../src/db/queries/routines';
-import { getLastPerformance } from '../../src/db/queries/workouts';
+import {
+  getLastPerformance,
+  getWorkoutExercisesWithDetails,
+  getSetsForWorkoutExercise,
+} from '../../src/db/queries/workouts';
 import { formatDuration, getProgressionSuggestion } from '../../src/utils/calculations';
 import { PlateCalculatorModal } from '../../src/components/tools/PlateCalculatorModal';
 import type { ActiveExercise, ActiveSet } from '../../src/store/workoutStore';
@@ -380,6 +384,7 @@ export default function ActiveWorkoutScreen() {
     empty?: string;
     routineId?: string;
     routineName?: string;
+    repeatWorkoutId?: string;
   }>();
 
   const { startTimer } = useTimerStore();
@@ -425,6 +430,43 @@ export default function ActiveWorkoutScreen() {
               defaultSets: re.defaultSets,
               restSeconds: re.restSeconds ?? 120,
             });
+          }
+        } else if (params.repeatWorkoutId) {
+          // Repeat last workout: load previous exercises and prefill sets with previous weight & reps
+          const workoutExs = await getWorkoutExercisesWithDetails(params.repeatWorkoutId);
+          for (const { we, exercise } of workoutExs) {
+            if (!exercise) continue;
+            const prevSets = await getSetsForWorkoutExercise(we.id);
+            const completedSets = prevSets.filter((s) => s.isCompleted);
+            const count = completedSets.length > 0 ? completedSets.length : 3;
+
+            await store.addExercise({
+              exerciseId: exercise.id,
+              exerciseName: exercise.name,
+              primaryMuscle: exercise.primaryMuscle,
+              equipment: exercise.equipment,
+              exerciseType: exercise.exerciseType,
+              defaultSets: count,
+              restSeconds: we.restSeconds ?? 120,
+            });
+
+            // Populate prefilled weights & reps into store
+            const currentExercises = useWorkoutStore.getState().exercises;
+            const addedEx = currentExercises[currentExercises.length - 1];
+            if (addedEx && completedSets.length > 0) {
+              for (let i = 0; i < addedEx.sets.length; i++) {
+                const targetSet = addedEx.sets[i];
+                const srcSet = completedSets[i] ?? completedSets[completedSets.length - 1];
+                if (targetSet && srcSet) {
+                  if (srcSet.weight !== null && srcSet.weight !== undefined) {
+                    store.updateSetField(addedEx.workoutExerciseId, targetSet.id, 'weight', srcSet.weight);
+                  }
+                  if (srcSet.reps !== null && srcSet.reps !== undefined) {
+                    store.updateSetField(addedEx.workoutExerciseId, targetSet.id, 'reps', srcSet.reps);
+                  }
+                }
+              }
+            }
           }
         }
       } catch (err) {

@@ -360,3 +360,138 @@ export async function getPeriodComparison(
     previous: compute(prevWorkouts),
   };
 }
+
+export async function getLastWorkoutMuscles(workoutId: string): Promise<string[]> {
+  const result = await db
+    .select({ muscle: exercises.primaryMuscle })
+    .from(workoutExercises)
+    .innerJoin(exercises, eq(workoutExercises.exerciseId, exercises.id))
+    .where(eq(workoutExercises.workoutId, workoutId));
+
+  const unique = Array.from(new Set(result.map((r) => r.muscle).filter(Boolean)));
+  return unique;
+}
+
+export interface MuscleRecoveryItem {
+  muscle: string;
+  daysAgo: number | null;
+  lastDate: string | null;
+}
+
+export async function getMusclesRecovery(): Promise<MuscleRecoveryItem[]> {
+  const majorMuscles = ['chest', 'back', 'legs', 'shoulders', 'biceps', 'triceps', 'core'];
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+  
+  const rows = await db
+    .select({
+      muscle: exercises.primaryMuscle,
+      startedAt: workouts.startedAt,
+    })
+    .from(workoutExercises)
+    .innerJoin(workouts, eq(workoutExercises.workoutId, workouts.id))
+    .innerJoin(exercises, eq(workoutExercises.exerciseId, exercises.id))
+    .where(gte(workouts.startedAt, thirtyDaysAgo))
+    .orderBy(desc(workouts.startedAt));
+
+  const muscleMap: Record<string, string> = {};
+  for (const row of rows) {
+    const m = row.muscle?.toLowerCase();
+    if (m && !muscleMap[m]) {
+      muscleMap[m] = row.startedAt;
+    }
+  }
+
+  const now = new Date();
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+  return majorMuscles.map((muscle) => {
+    const lastDate = muscleMap[muscle] ?? null;
+    if (!lastDate) {
+      return { muscle, daysAgo: null, lastDate: null };
+    }
+    const d = new Date(lastDate);
+    const dMidnight = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const daysAgo = Math.max(0, Math.floor((todayMidnight - dMidnight) / 86400000));
+    return { muscle, daysAgo, lastDate };
+  });
+}
+
+export async function getStreakStats(): Promise<{
+  currentStreak: number;
+  bestStreak: number;
+  daysSinceLastWorkout: number | null;
+  hasTrainedToday: boolean;
+}> {
+  const all = await db.select({ startedAt: workouts.startedAt }).from(workouts).orderBy(desc(workouts.startedAt));
+  if (all.length === 0) {
+    return { currentStreak: 0, bestStreak: 0, daysSinceLastWorkout: null, hasTrainedToday: false };
+  }
+
+  const uniqueDateStrs = Array.from(
+    new Set(
+      all.map((w) => {
+        const d = new Date(w.startedAt);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      })
+    )
+  ).sort().reverse();
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const yesterday = new Date(now.getTime() - 86400000);
+  const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+  const hasTrainedToday = uniqueDateStrs.includes(todayStr);
+  const hasTrainedYesterday = uniqueDateStrs.includes(yesterdayStr);
+
+  const latestDateStr = uniqueDateStrs[0];
+  const latestDate = new Date(latestDateStr);
+  const todayDate = new Date(todayStr);
+  const daysSinceLastWorkout = Math.max(0, Math.floor((todayDate.getTime() - latestDate.getTime()) / 86400000));
+
+  let currentStreak = 0;
+  if (hasTrainedToday || hasTrainedYesterday) {
+    let expected = hasTrainedToday ? todayDate : yesterday;
+    for (const dateStr of uniqueDateStrs) {
+      const d = new Date(dateStr);
+      const diff = Math.floor((expected.getTime() - d.getTime()) / 86400000);
+      if (diff === 0) {
+        currentStreak++;
+        expected = new Date(expected.getTime() - 86400000);
+      } else {
+        break;
+      }
+    }
+  }
+
+  const ascDates = [...uniqueDateStrs].reverse().map((s) => new Date(s));
+  let bestStreak = 0;
+  let tempStreak = 0;
+  let prevDate: Date | null = null;
+
+  for (const d of ascDates) {
+    if (!prevDate) {
+      tempStreak = 1;
+    } else {
+      const diff = Math.round((d.getTime() - prevDate.getTime()) / 86400000);
+      if (diff === 1) {
+        tempStreak++;
+      } else if (diff > 1) {
+        tempStreak = 1;
+      }
+    }
+    prevDate = d;
+    if (tempStreak > bestStreak) {
+      bestStreak = tempStreak;
+    }
+  }
+
+  bestStreak = Math.max(bestStreak, currentStreak);
+
+  return {
+    currentStreak,
+    bestStreak,
+    daysSinceLastWorkout,
+    hasTrainedToday,
+  };
+}
